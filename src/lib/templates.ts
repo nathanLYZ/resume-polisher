@@ -283,7 +283,23 @@ ${template.outputFormat}
       "简历中可能被追问的薄弱点（2-3个），以及如何准备应对"
     ],
     "starStories": [
-      "建议准备的STAR故事（1-2个），针对JD核心要求，用候选人真实经历"
+      {"situation":"背景","task":"任务","action":"行动","result":"成果"}
+    ]
+  },
+  "resumeScore": {
+    "total": 75,
+    "dimensions": [
+      {"name": "JD匹配度", "score": 80, "comment": "关键词覆盖率较好，但缺少XX"},
+      {"name": "量化程度", "score": 70, "comment": "部分经历缺少数字支撑"},
+      {"name": "表达专业度", "score": 85, "comment": "用词规范，结构清晰"},
+      {"name": "经历深度", "score": 65, "comment": "项目经验可以更细化"},
+      {"name": "完整度", "score": 78, "comment": "教育/技能/经历齐全"}
+    ],
+    "summary": "整体评价1-2句话，指出最大优势和最需改进的点",
+    "improvements": [
+      "具体改进建议1（1句话）",
+      "具体改进建议2",
+      "具体改进建议3"
     ]
   }
 }
@@ -294,5 +310,9 @@ ${template.outputFormat}
 - missingKeywords 是那些JD强调但简历完全没有提及的关键词。
 - 如果简历已经很好地匹配JD，suggestions 可以为空数组。
 - interviewPrep 中的所有问题/建议都必须基于候选人的真实简历内容和JD要求，不能凭空编造。
+- resumeScore.total 是0-100的整数，反映简历整体质量。
+- resumeScore.dimensions 包含5个维度评分（每个0-100）：JD匹配度、量化程度、表达专业度、经历深度、完整度。每个维度附一句评语。
+- resumeScore.summary 是整体评价，指出最大优势和最需要改进的点。
+- resumeScore.improvements 是3条具体改进建议。
 ${templateId === "english" ? "- changes 中的 original 用原文中文，modified 用英文翻译。" : ""}`;
 }

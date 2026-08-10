@@ -21,6 +21,19 @@ export interface InterviewPrep {
   starStories: (string | StarStory)[];
 }
 
+export interface ScoreDimension {
+  name: string;
+  score: number;
+  comment: string;
+}
+
+export interface ResumeScore {
+  total: number;
+  dimensions: ScoreDimension[];
+  summary: string;
+  improvements: string[];
+}
+
 export interface PolishResult {
   polishedResume: string;
   changes: { original: string; modified: string; reason: string }[];
@@ -29,6 +42,7 @@ export interface PolishResult {
   missingKeywords: string[];
   suggestions: string[];
   interviewPrep?: InterviewPrep;
+  resumeScore?: ResumeScore;
 }
 
 function extractJSON(text: string): unknown {
@@ -83,6 +97,7 @@ export async function POST(request: NextRequest) {
         weakPoints: [],
         starStories: [],
       },
+      resumeScore: parsed.resumeScore || undefined,
     };
 
     return NextResponse.json(result);
