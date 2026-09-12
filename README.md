@@ -2,6 +2,8 @@
 
 根据 JD（职位描述）智能润色简历的 Web 应用。支持从 BOSS 直聘一键导入 JD，AI 自动优化简历表达、匹配关键词、发现简历不足。
 
+> **🚀 在线体验：[https://resume.daybydayai.xyz](https://resume.daybydayai.xyz)** （海外备用：https://resume-polisher-eta.vercel.app）
+
 ## ✨ 功能特性
 
 - **BOSS直聘一键导入JD**：油猴脚本自动提取JD，无需手动复制

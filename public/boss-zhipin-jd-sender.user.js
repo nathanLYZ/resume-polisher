@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         BOSS直聘 JD 发送到简历润色助手 v3.3
-// @namespace    https://localhost:3000
-// @version      3.3
+// @name         BOSS直聘 JD 发送到简历润色助手 v3.4
+// @namespace    https://resume.daybydayai.xyz
+// @version      3.4
 // @description  在BOSS直聘职位详情页一键将JD发送到简历润色助手
 // @author       Resume Polisher
 // @match        https://www.zhipin.com/*
@@ -9,6 +9,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @grant        GM_registerMenuCommand
+// @connect      resume.daybydayai.xyz
 // @connect      localhost
 // @connect      127.0.0.1
 // @run-at       document-start
@@ -17,7 +18,7 @@
 (function () {
   "use strict";
 
-  var APP_BASE_URL = "http://localhost:3000";
+  var APP_BASE_URL = "https://resume.daybydayai.xyz";
   var API_ENDPOINT = APP_BASE_URL + "/api/import-jd";
 
   var css =
