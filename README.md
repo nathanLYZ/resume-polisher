@@ -11,6 +11,10 @@
 - **JD 关键词分析**：提取 JD 核心关键词，标注已匹配/缺失项
 - **优化建议**：针对缺失关键词给出具体补充建议
 - **一键复制 / 导出**：复制润色结果到剪贴板，或导出为 Markdown 文件
+- **模板填空**：内置简历模板，按字段填写快速生成简历
+- **质量评分 / 面试建议**：生成简历质量评分与针对性面试准备建议
+- **关键词库**：维护个人关键词库，润色与匹配时自动参考
+- **历史记录 / 草稿保存**：本地保存润色历史与草稿，随时回看
 
 ## 🛠 技术栈
 
@@ -121,15 +125,20 @@ BOSS直聘职位详情页                简历润色助手 (localhost:3000)
 │   ├── app/
 │   │   ├── api/
 │   │   │   ├── polish/route.ts          # 润色 API Route
-│   │   │   └── import-jd/route.ts       # JD 导入 API Route
+│   │   │   ├── import-jd/route.ts       # JD 导入 API Route
+│   │   │   └── keyword-bank/route.ts    # 关键词库 API Route
 │   │   ├── globals.css                  # 全局样式 + Tailwind v4
 │   │   ├── layout.tsx                   # 根布局
 │   │   └── page.tsx                     # 主页面
 │   ├── components/
-│   │   └── DiffView.tsx                 # 逐行 diff 组件（LCS算法）
+│   │   ├── DiffView.tsx                 # 逐行 diff 组件（LCS算法）
+│   │   ├── ResumePreview.tsx            # 简历预览组件
+│   │   └── ResumeTemplateForm.tsx       # 模板填空表单
 │   └── lib/
 │       ├── deepseek.ts                  # DeepSeek API 封装
-│       └── prompt.ts                    # Prompt 构建逻辑
+│       ├── prompt.ts                    # Prompt 构建逻辑
+│       ├── resumeTemplatesData.ts       # 内置简历模板数据
+│       └── storage.ts                   # 历史记录 / 草稿本地存储
 ```
 
 ## ⚠ 注意事项
@@ -140,3 +149,7 @@ BOSS直聘职位详情页                简历润色助手 (localhost:3000)
 - AI 不会编造不存在的经历，只在已有内容基础上优化
 - 建议润色后人工再检查一遍，确保表达准确
 - 项目使用 webpack 模式构建（`--webpack` flag），兼容性更好
+
+## 📄 License
+
+[MIT](./LICENSE) © 2026 nathanLYZ
