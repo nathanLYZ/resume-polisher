@@ -80,12 +80,35 @@ export async function POST(request: NextRequest) {
     }
 
     const messages = buildPolishPrompt(resume, jd, templateId || "professional", formatId || "classic");
-    const rawResponse = await callDeepSeek(messages, { temperature: 0.7, maxTokens: 4096 });
 
-    const parsed = extractJSON(rawResponse) as Partial<PolishResult>;
+    // 输出结构大（润色全文+修改清单+评分+面试准备），4096 容易截断导致 JSON 解析失败；
+    // 开 JSON 模式 + 8192 上限 + 失败自动降级重试一次（更低温、要求压缩输出）
+    let parsed: Partial<PolishResult> | null = null;
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 2 && !parsed; attempt++) {
+      const attemptMessages = attempt === 0
+        ? messages
+        : [...messages, {
+            role: "user" as const,
+            content: "上一次输出未能解析为 JSON。请重新输出完整结果：只输出一个 JSON 对象；changes 最多 8 条、suggestions 最多 5 条、starStories 最多 3 条，其余字段保持精简，确保在长度限制内完整输出。",
+          }];
+      try {
+        const rawResponse = await callDeepSeek(attemptMessages, {
+          temperature: attempt === 0 ? 0.7 : 0.3,
+          maxTokens: 8192,
+          jsonMode: true,
+        });
+        parsed = extractJSON(rawResponse) as Partial<PolishResult>;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    if (!parsed) {
+      throw lastError instanceof Error ? lastError : new Error("无法从 AI 返回内容中解析 JSON");
+    }
 
     const result: PolishResult = {
-      polishedResume: parsed.polishedResume || rawResponse,
+      polishedResume: parsed.polishedResume || "（AI 未返回润色正文，请重试）",
       changes: Array.isArray(parsed.changes) ? parsed.changes : [],
       jdKeywords: Array.isArray(parsed.jdKeywords) ? parsed.jdKeywords : [],
       matchedKeywords: Array.isArray(parsed.matchedKeywords) ? parsed.matchedKeywords : [],

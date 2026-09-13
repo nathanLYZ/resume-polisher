@@ -14,6 +14,8 @@ export interface DeepSeekOptions {
   model?: string;
   temperature?: number;
   maxTokens?: number;
+  /** 开启 JSON 输出模式（要求提示词中包含 "json" 字样，DeepSeek 文档约束） */
+  jsonMode?: boolean;
 }
 
 /**
@@ -33,6 +35,7 @@ export async function callDeepSeek(
     model = "deepseek-chat",
     temperature = 0.7,
     maxTokens = 4096,
+    jsonMode = false,
   } = options;
 
   const response = await fetch(DEEPSEEK_API_URL, {
@@ -46,6 +49,7 @@ export async function callDeepSeek(
       messages,
       temperature,
       max_tokens: maxTokens,
+      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
     }),
   });
 
@@ -57,7 +61,15 @@ export async function callDeepSeek(
   }
 
   const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
+  const choice = data.choices?.[0];
+
+  if (choice?.finish_reason === "length") {
+    throw new Error(
+      "AI 输出超过长度限制被截断，请精简简历内容后重试"
+    );
+  }
+
+  const content = choice?.message?.content;
 
   if (!content) {
     throw new Error("DeepSeek API 返回内容为空");
