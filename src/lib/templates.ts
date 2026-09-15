@@ -226,9 +226,10 @@ export const TEMPLATES: Record<TemplateId, ResumeTemplate> = {
 };
 
 /**
- * 根据模板构建完整的 system prompt
+ * 核心方法论(红线 + 优化原则 + 通用方法论 + 风格模板),不含输出 JSON 规格。
+ * agent 侧(见 lib/agent/prompts.ts)复用 core,搭配不同的输出规格。
  */
-export function buildSystemPrompt(templateId: TemplateId): string {
+export function buildCorePrompt(templateId: TemplateId): string {
   const template = TEMPLATES[templateId] || TEMPLATES.professional;
 
   return `你是一位资深的简历顾问和HR专家，擅长根据目标职位描述(JD)优化简历，让候选人的简历在ATS(申请人追踪系统)和HR筛选中脱颖而出。
@@ -265,7 +266,14 @@ export function buildSystemPrompt(templateId: TemplateId): string {
 
 ${template.systemPrompt}
 
-${template.outputFormat}
+${template.outputFormat}`;
+}
+
+/**
+ * 根据模板构建完整的 system prompt(原行为不变:core + 完整 JSON 输出规格)
+ */
+export function buildSystemPrompt(templateId: TemplateId): string {
+  return `${buildCorePrompt(templateId)}
 
 输出格式要求（严格遵守）：
 你必须以 JSON 格式返回，不要包含任何额外的文字说明、不要用 markdown 代码块包裹。返回结构如下：
