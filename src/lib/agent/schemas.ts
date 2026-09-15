@@ -92,6 +92,7 @@ export interface ReviewReport {
   passed: boolean; // 最后一轮是否无 blocker
   issues: AgentIssue[]; // 最后一轮的全部 issue(含未修复的,如实展示)
   elapsedMs: number;
+  mode?: "fixed" | "tool-agent"; // 编排模式(固定流水线 / 模型驱动 tool-use)
 }
 
 /** SSE result 事件负载(旧 PolishResult 的超集) */

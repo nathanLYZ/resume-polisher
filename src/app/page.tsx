@@ -230,11 +230,11 @@ export default function Home() {
           const dataLine = lines.find((l) => l.startsWith("data: "));
           if (!type || !dataLine) continue;
           const payload = JSON.parse(dataLine.slice(6)) as {
-            stage?: string; status?: string; iteration?: number;
+            stage?: string; status?: string; iteration?: number; detail?: string;
             verdict?: string; blockerCount?: number; message?: string;
           };
           if (type === "stage") {
-            const label = STAGE_LABELS[payload.stage ?? ""] ?? payload.stage ?? "";
+            const label = payload.detail || STAGE_LABELS[payload.stage ?? ""] || payload.stage || "";
             const round = (payload.iteration ?? 0) > 0 ? `(第${(payload.iteration ?? 0) + 1}轮)` : "";
             setPolishStep(payload.stage === "finalize" ? 3 : 2);
             setAgentStage(payload.status === "start" ? `${label}${round}…` : "");

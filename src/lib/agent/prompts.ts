@@ -75,6 +75,25 @@ export interface DraftExtras {
   companyContext?: string;
 }
 
+/** 关键词库注入块(红线约束内嵌) */
+function hintsBlock(extras?: DraftExtras): string {
+  if (!extras?.keywordHints?.length) return "";
+  return `
+
+## 跨岗位高频关键词（来自个人关键词库，多岗位反复要求的词）
+若与候选人真实经历相符，优先将这些词自然落入对应经历与技能（红线依旧：无相关经历的词不硬凑）：
+${extras.keywordHints.join("、")}`;
+}
+
+/** 公司调研注入块 */
+function companyBlock(extras?: DraftExtras): string {
+  if (!extras?.companyContext) return "";
+  return `
+
+## 目标公司调研（供背景与术语对齐，仅用于校准表达，不得据此虚构候选人经历）
+${extras.companyContext}`;
+}
+
 /** 起草(或带 issues 的修订)消息 */
 export function buildAgentDraftMessages(
   resume: string,
@@ -85,20 +104,7 @@ export function buildAgentDraftMessages(
   extras?: DraftExtras
 ): ChatMessage[] {
   const format = FORMATS[formatId] || FORMATS.classic;
-  const hintsBlock = extras?.keywordHints?.length
-    ? `
-
-## 跨岗位高频关键词（来自个人关键词库，多岗位反复要求的词）
-若与候选人真实经历相符，优先将这些词自然落入对应经历与技能（红线依旧：无相关经历的词不硬凑）：
-${extras.keywordHints.join("、")}`
-    : "";
-  const companyBlock = extras?.companyContext
-    ? `
-
-## 目标公司调研（供背景与术语对齐，仅用于校准表达，不得据此虚构候选人经历）
-${extras.companyContext}`
-    : "";
-  const system = `${buildCorePrompt(templateId)}${SHARED_RULES}${hintsBlock}${companyBlock}\n\n${format.formatPrompt}${draftJsonSpec(templateId)}`;
+  const system = `${buildCorePrompt(templateId)}${SHARED_RULES}${hintsBlock(extras)}${companyBlock(extras)}\n\n${format.formatPrompt}${draftJsonSpec(templateId)}`;
 
   const messages: ChatMessage[] = [
     { role: "system", content: system },
@@ -161,6 +167,44 @@ export function buildResumeScoreMessages(resume: string, jd: string, polished: s
     {
       role: "user",
       content: `## JD\n---\n${jd}\n---\n\n## 简历原文(事实基准)\n---\n${resume}\n---\n\n## 润色稿\n---\n${polished}\n---`,
+    },
+  ];
+}
+
+/**
+ * Tool-use agent 的系统提示:policy + 工具使用守则(无 JSON 输出规格——
+ * 产出经 submit_final 工具结构化提交,规格在工具的 inputSchema 里)
+ */
+export function buildToolAgentSystemPrompt(
+  resume: string,
+  jd: string,
+  templateId: TemplateId,
+  extras?: DraftExtras
+): ChatMessage[] {
+  return [
+    {
+      role: "system",
+      content: `${buildCorePrompt(templateId)}${SHARED_RULES}${hintsBlock(extras)}${companyBlock(extras)}
+
+## 你的工作方式（自主 agent）
+
+你将独立完成这次简历润色。你有三个工具：
+
+- **check_draft**：对草稿跑 8 项确定性体检（数字守恒/时间线/JD照搬/关键词覆盖/结构/关键词实词化/年龄工龄/中英夹杂）。零成本，每次修改后建议自检。
+- **adversarial_review**：请独立的对抗式审查员挑毛病（虚构经历/照搬JD/内部代号/外行可读性/职责流水账等）。建议 check_draft 通过后再调用。
+- **submit_final**：提交终稿。服务端会**强制复检**：仍有 blocker 会被拒回，你必须修复后重新提交。
+
+工作守则：
+1. 先读完原文与 JD，形成修改策略，直接产出第一版草稿——不需要任何工具帮你"写"，工具只负责验证。
+2. 产出后先 check_draft 自检；有 blocker 先修复再提交，不要赌提交门禁会放水——它不会。
+3. matchedKeywords 是硬约束：列出的每个词都必须真实出现在 polishedResume 正文中。
+4. 数字只能来自原文；原文没有的量化数据写进 suggestions，绝不虚构。
+5. 收敛后尽快 submit_final；被拒回时只修被拒的问题，其余内容保持不变。
+6. 对抗审查是对"你"的审查——它的 blocker 也要修，不要为自己辩护。`,
+    },
+    {
+      role: "user",
+      content: userContent(resume, jd),
     },
   ];
 }

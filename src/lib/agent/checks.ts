@@ -46,7 +46,7 @@ export function runAllChecks(input: ChecksInput): Issue[] {
   ];
 }
 
-export function hasBlocker(issues: Issue[]): boolean {
+export function hasBlocker(issues: { severity: "blocker" | "warning" }[]): boolean {
   return issues.some((i) => i.severity === "blocker");
 }
 

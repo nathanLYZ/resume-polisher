@@ -44,8 +44,8 @@ const MAX_ITERATIONS = 2; // 最多 3 轮(0,1,2)
 const LOOP_DEADLINE_MS = 40_000; // 超时后不再修订
 const FINALIZE_DEADLINE_MS = 38_000; // 超时后跳过评分/面试建议
 
-/** 起草一次(或修订一次),带 JSON 解析失败重试(与旧 route 相同的两段式策略) */
-async function draftOnce(
+/** 起草一次(或修订一次),带 JSON 解析失败重试(与旧 route 相同的两段式策略;toolLoop 的降级路径也复用) */
+export async function draftOnce(
   input: AgentRunInput,
   extras: { keywordHints: string[] },
   revise?: { issues: AgentIssue[]; previousDraft: string }
