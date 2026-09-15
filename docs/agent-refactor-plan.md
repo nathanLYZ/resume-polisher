@@ -98,6 +98,11 @@ export interface Issue {
 - 提取润色稿中所有拉丁词,过滤两类豁免:技术名词白名单(Java/Python/K8s/SQL… + JD 与原文中出现过的技术词)→ 其余中文句子里夹的英文 → `warning`,交给 reviewer 仲裁是术语还是炫技
 - 与 `english` 模板互斥:该模板本身输出英文简历,检查器按 templateId 跳过
 
+**⑨ 篇幅估算**("不超过 2 页"的机械化,senior 模板规则;2026-09-16 加入)
+- 行数模型:CJK/全角宽 1、拉丁/数字宽 0.5,每行 40 等效字符、每页 45 行(≈10.5pt 常规页边距)
+- `concise` 上限 1 页(极简一页版),其余模板 2 页;warning 级(估算 ±15%,最终以打印预览为准)
+- 纯文本无法精确分页,精确版需前端对 ResumePreview 渲染高度做 DOM 测量(待定增强)
+
 ### 2.3 LLM Reviewer `src/lib/agent/reviewer.ts`
 
 代码检查全绿后才跑(省调用)。AI SDK `generateObject` + Zod:

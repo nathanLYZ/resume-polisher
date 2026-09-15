@@ -15,7 +15,8 @@ export type CheckName =
   | "structure"
   | "keyword_stuffing"
   | "age_tenure"
-  | "english_mixing";
+  | "english_mixing"
+  | "page_estimate";
 
 export interface Issue {
   check: CheckName;
@@ -43,6 +44,7 @@ export function runAllChecks(input: ChecksInput): Issue[] {
     ...checkKeywordStuffing(input.matchedKeywords, input.polished),
     ...checkAgeTenure(input.original, input.polished),
     ...checkEnglishMixing(input.original, input.jd, input.polished, input.templateId),
+    ...checkPageEstimate(input.polished, input.templateId),
   ];
 }
 
@@ -518,4 +520,48 @@ export function checkEnglishMixing(
     });
   }
   return issues;
+}
+
+// ---------------------------------------------------------------------------
+// ⑨ 篇幅估算 —— "不超过 2 页"的机械化(senior 模板规则;纯文本无法精确分页,行数模型近似)
+// ---------------------------------------------------------------------------
+
+/** 每模板页数上限:concise 目标一页纸;其余默认 2 页(senior 模板明确"不超过2页") */
+const PAGE_LIMITS: Record<string, number> = { concise: 1 };
+const DEFAULT_PAGE_LIMIT = 2;
+
+/** 行宽权重:CJK/全角 ≈ 1,拉丁/数字/半角 ≈ 0.5 */
+function lineWeight(line: string): number {
+  let w = 0;
+  for (const ch of line) w += /[⺀-鿿豈-﫿　-〿！-｠]/.test(ch) ? 1 : 0.5;
+  return w;
+}
+
+/**
+ * 页数估算:行数模型(默认每行 40 个 CJK 等效字符、每页 45 行 ≈ 10.5pt 常规页边距)。
+ * 纯文本无法精确分页(真实页数取决于字体/边距/视觉主题),结果仅供预警,以打印预览为准。
+ */
+export function estimatePages(text: string, charsPerLine = 40, linesPerPage = 45): number {
+  const lines = text
+    .split("\n")
+    .reduce((sum, line) => sum + Math.max(1, Math.ceil(lineWeight(line) / charsPerLine)), 0);
+  return lines / linesPerPage;
+}
+
+export function checkPageEstimate(polished: string, templateId?: string): Issue[] {
+  const limit = templateId ? (PAGE_LIMITS[templateId] ?? DEFAULT_PAGE_LIMIT) : DEFAULT_PAGE_LIMIT;
+  const pages = estimatePages(polished);
+  if (pages <= limit + 0.05) return []; // 5% 容差吸收边界抖动
+  return [
+    {
+      check: "page_estimate",
+      severity: "warning",
+      location: "全文",
+      evidence: `预计篇幅约 ${pages.toFixed(1)} 页,超出${limit === 1 ? "一页纸" : "两页"}上限(估算值,以打印预览为准)`,
+      fixHint:
+        limit === 1
+          ? "压缩到一页:只保留与 JD 最相关的经历,每条 1-2 行,删除次要分区"
+          : "压缩到两页内:精简职责流水账行、合并同类项目、删除与 JD 无关内容;修订后用打印预览确认实际页数",
+    },
+  ];
 }

@@ -10,6 +10,8 @@ import {
   checkKeywordStuffing,
   checkAgeTenure,
   checkEnglishMixing,
+  estimatePages,
+  checkPageEstimate,
   type Issue,
 } from "./checks";
 
@@ -290,5 +292,39 @@ describe("runAllChecks / hasBlocker", () => {
     expect(checks).toContain("number_conservation");
     expect(checks).toContain("keyword_coverage");
     expect(hasBlocker(issues)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ⑨ 篇幅估算
+// ---------------------------------------------------------------------------
+
+describe("checkPageEstimate / estimatePages", () => {
+  it("行宽模型:40 个汉字一行,拉丁按半宽", () => {
+    expect(estimatePages("一".repeat(40))).toBeCloseTo(1 / 45, 5);
+    expect(estimatePages("一".repeat(80))).toBeCloseTo(2 / 45, 5);
+    expect(estimatePages("a".repeat(80))).toBeCloseTo(1 / 45, 5); // 拉丁 0.5 宽
+    expect(estimatePages("负责交易系统研发")).toBeLessThan(0.5);
+  });
+
+  it("超过两页 → warning;两页内 → 无 issue", () => {
+    const long = Array.from({ length: 100 }, () => "一".repeat(30)).join("\n"); // 100 行 ≈ 2.2 页
+    expect(estimatePages(long)).toBeGreaterThan(2);
+    const issues = checkPageEstimate(long);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].severity).toBe("warning");
+    expect(issues[0].evidence).toContain("2 页");
+    expect(checkPageEstimate("负责交易系统研发")).toEqual([]);
+  });
+
+  it("边界:正好两页不报(5% 容差)", () => {
+    const exactly2 = Array.from({ length: 90 }, () => "一".repeat(40)).join("\n"); // 90 行 = 2.0 页
+    expect(checkPageEstimate(exactly2)).toEqual([]);
+  });
+
+  it("concise 模板上限一页:一页半即报,professional 同文本不报", () => {
+    const oneAndHalf = Array.from({ length: 60 }, () => "一".repeat(40)).join("\n"); // 60 行 ≈ 1.33 页
+    expect(checkPageEstimate(oneAndHalf, "professional")).toEqual([]);
+    expect(checkPageEstimate(oneAndHalf, "concise")).toHaveLength(1);
   });
 });
