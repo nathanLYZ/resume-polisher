@@ -7,6 +7,7 @@ import ResumeTemplateForm from "@/components/ResumeTemplateForm";
 import { TEMPLATES, type TemplateId } from "@/lib/templates";
 import { FORMATS, type FormatId } from "@/lib/resumeFormats";
 import { THEME_LIST, type ThemeId } from "@/lib/resumeThemes";
+import { estimatePages } from "@/lib/agent/checks";
 import { EXAMPLE_RESUME, EXAMPLE_JD } from "@/lib/exampleResume";
 import { getHistory, addHistory, deleteHistory, clearHistory, formatTime, saveDraft, loadDraft, type HistoryItem } from "@/lib/storage";
 
@@ -33,7 +34,7 @@ interface HealthReport { issues: HealthIssue[]; blockerCount: number; warningCou
 const CHECK_LABELS: Record<string, string> = {
   number_conservation: "数字守恒", timeline: "时间线", keyword_coverage: "关键词覆盖",
   jd_copy: "JD照搬", structure: "结构完整", keyword_stuffing: "关键词实词化",
-  age_tenure: "年龄/工龄", english_mixing: "中英夹杂",
+  age_tenure: "年龄/工龄", english_mixing: "中英夹杂", page_estimate: "篇幅估算",
   // LLM 审查类型
   fabrication: "虚构经历", job_duty_copy: "照搬JD", internal_codename: "内部代号",
   jargon: "外行可读性", empty_bullets: "职责流水账", changes_mismatch: "修改说明不符",
@@ -521,9 +522,10 @@ export default function Home() {
                           <>
                             <div className={`rounded-lg p-3 text-sm font-medium ${health.passed ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
                               {health.passed
-                                ? (health.warningCount > 0 ? `🛡 未发现硬伤,可以投递。另有 ${health.warningCount} 条提示建议人工确认。` : "🛡 八项检查全部通过,可以投递 🎉")
+                                ? (health.warningCount > 0 ? `🛡 未发现硬伤,可以投递。另有 ${health.warningCount} 条提示建议人工确认。` : "🛡 全部检查通过,可以投递 🎉")
                                 : `🛡 发现 ${health.blockerCount} 个硬伤(虚构/照搬/编造类问题),建议修订后再投递;另有 ${health.warningCount} 条提示。`}
                             </div>
+                            <p className="text-xs text-slate-400">📄 预计篇幅:约 {Math.max(1, Math.round(estimatePages(result.polishedResume) * 10) / 10)} 页(纯文本行数估算,最终以打印预览为准)</p>
                             {(["blocker", "warning"] as const).map((sev) => {
                               const list = health.issues.filter((i) => i.severity === sev);
                               if (list.length === 0) return null;
