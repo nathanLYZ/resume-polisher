@@ -10,6 +10,7 @@ import ResumePreview from "@/components/ResumePreview";
 import ResumeTemplateForm from "@/components/ResumeTemplateForm";
 import HealthReportView from "@/components/HealthReportView";
 import AgentProgress from "@/components/AgentProgress";
+import ResumePrintView from "@/components/ResumePrintView";
 import { TEMPLATES, type TemplateId } from "@/lib/templates";
 import { FORMATS, type FormatId } from "@/lib/resumeFormats";
 import { THEME_LIST, type ThemeId } from "@/lib/resumeThemes";
@@ -522,7 +523,7 @@ export default function Home() {
                   </div>
 
                   <div className="p-4 max-h-[600px] overflow-y-auto print:max-h-none print:overflow-visible print:p-0">
-                    {activeTab === "preview" && <div className="print:block"><ResumePreview content={result.polishedResume} themeId={selectedTheme} /></div>}
+                    {activeTab === "preview" && <div className="print:hidden"><ResumePreview content={result.polishedResume} themeId={selectedTheme} /></div>}
                     {activeTab === "polished" && <pre className="whitespace-pre-wrap text-sm text-slate-800 leading-relaxed font-sans">{result.polishedResume}</pre>}
                     {activeTab === "diff" && (<div><div className="flex items-center gap-4 mb-3 text-xs text-slate-500"><span className="flex items-center gap-1"><span className="w-3 h-3 inline-block bg-green-200 rounded"></span> 新增</span><span className="flex items-center gap-1"><span className="w-3 h-3 inline-block bg-red-200 rounded"></span> 删除</span></div><DiffView original={resume} modified={result.polishedResume} /></div>)}
                     {activeTab === "changes" && (<div className="space-y-3">{result.changes.map((change, idx) => (<div key={idx} className="border border-slate-200 rounded-lg p-3"><div className="flex items-start gap-2"><span className="flex-shrink-0 w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center mt-0.5">{idx + 1}</span><div className="flex-1 space-y-2"><div><span className="text-xs text-red-500 font-medium">原文：</span><span className="text-sm text-slate-600 line-through">{change.original}</span></div><div><span className="text-xs text-green-600 font-medium">修改：</span><span className="text-sm text-slate-800 font-medium">{change.modified}</span></div><div className="flex items-start gap-1.5"><span className="text-xs text-brand-600 font-medium mt-0.5">💡</span><span className="text-xs text-slate-500">{change.reason}</span></div></div></div></div>))}</div>)}
@@ -657,7 +658,8 @@ export default function Home() {
             </div>
           </div>
         </div>
-        {result && <div className="hidden print:block"><ResumePreview content={result.polishedResume} themeId={selectedTheme} /></div>}
+        {/* 打印/导出 PDF 唯一来源:专业排印版式(与屏幕主题无关) */}
+        {result && <div className="hidden print:block"><ResumePrintView content={result.polishedResume} /></div>}
       </div>
     </main>
   );

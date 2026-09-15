@@ -76,5 +76,10 @@ body {
   .print\:px-0 { padding-left: 0 !important; padding-right: 0 !important; }
   .print\:py-0 { padding-top: 0 !important; padding-bottom: 0 !important; }
   .print\:max-w-none { max-width: none !important; }
-  @page { margin: 1cm; }
+  /* PDF 排印规范:A4、常规页边距、思源黑体系、防截断 */
+  @page { size: A4; margin: 14mm 15mm; }
+  html { -webkit-print-color-adjust: exact; }
+  .hidden.print\:block > * {
+    font-family: "Noto Sans SC", "Source Han Sans SC", "Source Han Sans CN", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
 }

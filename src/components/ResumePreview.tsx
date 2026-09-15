@@ -351,7 +351,7 @@ function cssVarsToStyle(vars: Record<string, string>): React.CSSProperties {
 
 // ============ 简历文本解析 ============
 
-interface ParsedSection {
+export interface ParsedSection {
   title: string;
   lines: string[];
 }
@@ -360,7 +360,7 @@ interface ParsedSection {
  * 将纯文本简历解析为分区结构
  * 识别标题行（如【工作经历】、═══ 分隔线、全大写英文等）
  */
-function parseResume(text: string): ParsedSection[] {
+export function parseResume(text: string): ParsedSection[] {
   const lines = text.split("\n");
   const sections: ParsedSection[] = [];
   let currentSection: ParsedSection | null = null;

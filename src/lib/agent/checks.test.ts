@@ -12,6 +12,8 @@ import {
   checkEnglishMixing,
   estimatePages,
   checkPageEstimate,
+  checkDateFormatConsistency,
+  checkArabicNumerals,
   type Issue,
 } from "./checks";
 
@@ -326,5 +328,44 @@ describe("checkPageEstimate / estimatePages", () => {
     const oneAndHalf = Array.from({ length: 60 }, () => "一".repeat(40)).join("\n"); // 60 行 ≈ 1.33 页
     expect(checkPageEstimate(oneAndHalf, "professional")).toEqual([]);
     expect(checkPageEstimate(oneAndHalf, "concise")).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ⑩ 日期格式一致性 / ⑪ 阿拉伯数字
+// ---------------------------------------------------------------------------
+
+describe("checkDateFormatConsistency / checkArabicNumerals", () => {
+  it("日期格式统一 → 通过", () => {
+    expect(checkDateFormatConsistency("2020.03-2022.05 A公司\n2022.06 B公司")).toEqual([]);
+    expect(checkDateFormatConsistency("2020年3月 入职")).toEqual([]);
+  });
+
+  it("混用「.」与「/」→ warning,指明多数格式", () => {
+    const issues = checkDateFormatConsistency("2020.03 入职\n2021.04 晋升\n2022/05 离职");
+    expect(issues).toHaveLength(1);
+    expect(issues[0].evidence).toContain("不统一");
+    expect(issues[0].fixHint).toContain("统一");
+  });
+
+  it("年份区间(2019-2022)不算日期样式,不误报", () => {
+    expect(checkDateFormatConsistency("2019-2022 A公司")).toEqual([]);
+  });
+
+  it("非法月份(2023.13)不参与统计", () => {
+    expect(checkDateFormatConsistency("2023.13 完成项目")).toEqual([]);
+  });
+
+  it("中文数字统计 → warning;「第一」类序数不误报", () => {
+    const issues = checkArabicNumerals("三年经验,带二十人团队,占比百分之三十,负责第一模块");
+    const tokens = issues.map((i) => i.evidence);
+    expect(tokens.some((t) => t.includes("三年"))).toBe(true);
+    expect(tokens.some((t) => t.includes("二十人"))).toBe(true);
+    expect(tokens.some((t) => t.includes("百分之三十"))).toBe(true);
+    expect(tokens.every((t) => !t.includes("第一"))).toBe(true);
+  });
+
+  it("阿拉伯数字正常表述 → 通过", () => {
+    expect(checkArabicNumerals("3 年经验,带 20 人团队,占比 30%")).toEqual([]);
   });
 });
