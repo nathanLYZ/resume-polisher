@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { runAgentLoop } from "@/lib/agent/loop";
+import { runToolAgentLoop } from "@/lib/agent/toolLoop";
 import type { TemplateId } from "@/lib/templates";
 import type { FormatId } from "@/lib/resumeFormats";
 
@@ -7,10 +7,10 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 /**
- * 深度模式润色端点(SSE 流式)
+ * 深度模式润色端点(SSE 流式,模型驱动 tool-use agent)
  *
  * 事件流契约(见 docs/agent-refactor-plan.md §2.5):
- *   event: stage   data: {stage, iteration, status}
+ *   event: stage   data: {stage, iteration, status, detail?}
  *   event: issues  data: {iteration, verdict, blockerCount, warningCount}
  *   event: result  data: {…PolishResult 字段, reviewReport}
  *   event: error   data: {message}
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       const emit = (event: string, data: unknown) => {
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
       };
-      runAgentLoop(
+      runToolAgentLoop(
         {
           resume,
           jd,

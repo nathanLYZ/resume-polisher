@@ -274,3 +274,18 @@ for (let i = 0; i <= MAX_ITERATIONS; i++) {
 2. **Day 1 下午**:检查器先作为独立「🛡 体检报告」Tab 上线(只报告不闭环,立刻有价值)
 3. **Day 2**:reviewer + loop + SSE + 修订模式,接成闭环
 4. **之后**:按 Phase 2 逐个上工具,每个独立可交付
+
+## 8. 实施追加:真 agent 化(2026-09-16,tool-use 循环)
+
+深度模式已从"固定编排的验证循环"(§2,保留为 `lib/agent/loop.ts`)升级为**模型驱动的 tool-use agent**(`lib/agent/toolLoop.ts` + `lib/agent/tools.ts`,Vercel AI SDK v5):
+
+**控制权分配(本项目的 workflow→agent 边界答案):**
+- **模型决定工作流**:产出草稿后,何时 `check_draft` 自检、是否 `adversarial_review` 对抗审查、何时 `submit_final` 提交、被拒后修什么——全部模型自主决定
+- **代码守住不可协商的不变量**:
+  1. 提交门禁:`submit_final` 触发确定性检查器**强制复检**,有 blocker 一律拒回并返回 issue 清单(模型无法绕过)
+  2. 预算:步数 ≤10、时间 ≤42s
+  3. 降级:模型未提交/agent 异常 → 单次起草保底,用户总拿得到结果;残留问题如实标注 `passed:false`
+
+**事件契约不变**(stage/issues/result/error),前端仅新增 `detail` 字段展示工具进度(如"提交被拒:2 个硬伤未修复")。`reviewReport.mode: "tool-agent"` 标记编排模式。
+
+**话术更新**:现在可以准确地说"这是一个 tool-use agent——模型自主决定工具调用序列与迭代策略,代码以不变量(确定性门禁/预算/降级)框定其自由度"。判断标准不变:控制权分配在哪,以及哪些规则被允许脱离模型意志强制执行。
