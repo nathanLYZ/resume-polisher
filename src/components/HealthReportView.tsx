@@ -1,12 +1,13 @@
 "use client";
 
 /**
- * 体检报告视图 —— 九项确定性检查的清单式报告
+ * 体检报告视图 —— 十一项确定性检查的清单式报告
  * 数据来自 /api/checks 或 agent 循环的 reviewReport(结构一致)
  */
 import {
   ShieldCheck, CheckCircle2, AlertTriangle, XCircle, Lightbulb, Bot, Code2,
   Hash, Clock, ScanSearch, FileWarning, LayoutTemplate, Target, UserX, Languages, FileText,
+  CalendarCheck, ListOrdered,
 } from "lucide-react";
 
 export interface HealthIssue {
@@ -25,7 +26,7 @@ export interface HealthReport {
   passed: boolean;
 }
 
-/** 九项确定性检查(顺序即报告网格顺序) */
+/** 十一项确定性检查(顺序即报告网格顺序) */
 const CODE_CHECKS: { key: string; label: string; icon: typeof Hash }[] = [
   { key: "number_conservation", label: "数字守恒", icon: Hash },
   { key: "timeline", label: "时间线", icon: Clock },
@@ -36,6 +37,8 @@ const CODE_CHECKS: { key: string; label: string; icon: typeof Hash }[] = [
   { key: "age_tenure", label: "年龄/工龄", icon: UserX },
   { key: "english_mixing", label: "中英夹杂", icon: Languages },
   { key: "page_estimate", label: "篇幅估算", icon: FileText },
+  { key: "date_format_consistency", label: "日期格式统一", icon: CalendarCheck },
+  { key: "arabic_numerals", label: "阿拉伯数字", icon: ListOrdered },
 ];
 
 const ISSUE_LABELS: Record<string, string> = {
@@ -62,11 +65,11 @@ export default function HealthReportView({
       <div className="space-y-3 animate-pulse" aria-label="体检进行中">
         <div className="h-16 rounded-lg bg-slate-100" />
         <div className="grid grid-cols-3 gap-2">
-          {Array.from({ length: 9 }).map((_, i) => (
+          {Array.from({ length: 11 }).map((_, i) => (
             <div key={i} className="h-14 rounded-lg bg-slate-100" />
           ))}
         </div>
-        <p className="text-center text-xs text-slate-400">九项确定性检查运行中…</p>
+        <p className="text-center text-xs text-slate-400">十一项确定性检查运行中…</p>
       </div>
     );
   }
@@ -113,12 +116,12 @@ export default function HealthReportView({
               : !health.passed
                 ? `另有 ${health.warningCount} 条提示 · `
                 : ""}
-            九项检查均为本地规则校验,结果可复现
+            十一项检查均为本地规则校验,结果可复现
           </p>
         </div>
       </div>
 
-      {/* 九项检查网格 */}
+      {/* 十一项检查网格 */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <h3 className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-700">
@@ -202,7 +205,7 @@ export default function HealthReportView({
 
       {health.issues.length === 0 && (
         <p className="inline-flex items-center gap-1.5 text-xs text-green-600">
-          <CheckCircle2 className="h-3.5 w-3.5" />九项检查全部通过,未产生任何发现
+          <CheckCircle2 className="h-3.5 w-3.5" />十一项检查全部通过,未产生任何发现
         </p>
       )}
       {reviewIssues.length > 0 && codeIssues.length === 0 && health.passed && (

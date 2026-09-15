@@ -16,7 +16,9 @@ export type CheckName =
   | "keyword_stuffing"
   | "age_tenure"
   | "english_mixing"
-  | "page_estimate";
+  | "page_estimate"
+  | "date_format_consistency"
+  | "arabic_numerals";
 
 export interface Issue {
   check: CheckName;
@@ -45,6 +47,8 @@ export function runAllChecks(input: ChecksInput): Issue[] {
     ...checkAgeTenure(input.original, input.polished),
     ...checkEnglishMixing(input.original, input.jd, input.polished, input.templateId),
     ...checkPageEstimate(input.polished, input.templateId),
+    ...checkDateFormatConsistency(input.polished),
+    ...checkArabicNumerals(input.polished),
   ];
 }
 
@@ -564,4 +568,63 @@ export function checkPageEstimate(polished: string, templateId?: string): Issue[
           : "压缩到两页内:精简职责流水账行、合并同类项目、删除与 JD 无关内容;修订后用打印预览确认实际页数",
     },
   ];
+}
+
+// ---------------------------------------------------------------------------
+// ⑩ 日期格式一致性 —— "2023.03 或 2023/03,全文一致"(PDF 排印原则的机械化)
+// ---------------------------------------------------------------------------
+
+/** 年-月 token(月必须合法 ≤12,排除 2019-2022 这类年份区间) */
+const YM_TOKEN_RE = /((?:19|20)\d{2})\s*([.\/\-年])\s*(\d{1,2})(?!\d)/g;
+
+export function checkDateFormatConsistency(polished: string): Issue[] {
+  const counts: Record<string, number> = { ".": 0, "/": 0, "-": 0, "年": 0 };
+  for (const m of polished.matchAll(YM_TOKEN_RE)) {
+    const month = Number(m[3]);
+    if (month >= 1 && month <= 12) counts[m[2]]++;
+  }
+  const used = (Object.entries(counts) as [string, number][]).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+  if (used.length < 2) return [];
+  const [major, ...minor] = used;
+  return [
+    {
+      check: "date_format_consistency",
+      severity: "warning",
+      location: "全文",
+      evidence: `日期格式不统一:${used.map(([sep, n]) => `「${sep}」式 ${n} 处`).join("、")}`,
+      fixHint: `全文统一为一种格式(推荐「${major[0]}」式,如 2023.03);时间与数据统一用阿拉伯数字`,
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// ⑪ 阿拉伯数字 —— "时间、数据用阿拉伯数字"(PDF 排印原则的机械化)
+// ---------------------------------------------------------------------------
+
+const CN_NUM_PATTERNS = [
+  /百分之[一二两三四五六七八九十百千零]+/g, // 百分之三十 → 30%
+  /(?<!第)[一二两三四五六七八九十百千零]{1,6}(?:[%％]|[个人次万倍年月天])/g, // 三年→3年、二十人→20人;排除"第一"类序数
+];
+
+export function checkArabicNumerals(polished: string): Issue[] {
+  const issues: Issue[] = [];
+  const seen = new Set<string>();
+  for (const re of CN_NUM_PATTERNS) {
+    for (const m of polished.matchAll(re)) {
+      const token = m[0];
+      if (seen.has(token)) continue;
+      seen.add(token);
+      const index = m.index ?? 0;
+      issues.push({
+        check: "arabic_numerals",
+        severity: "warning",
+        location: loc(polished, index),
+        evidence: `中文数字统计表述「${token}」,建议改用阿拉伯数字`,
+        fixHint: token.startsWith("百分之")
+          ? `「${token}」改为百分比数字(如 30%)`
+          : `「${token}」改为阿拉伯数字(如 三年 → 3 年);全文数据格式保持统一`,
+      });
+    }
+  }
+  return issues;
 }
