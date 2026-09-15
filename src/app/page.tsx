@@ -27,7 +27,24 @@ interface PolishResult {
 }
 interface ImportedJD { hasNew: boolean; jobTitle?: string; company?: string; salary?: string; city?: string; jdText?: string; jobUrl?: string; }
 interface KeywordEntry { keyword: string; count: number; firstSeen: number; lastSeen: number; jobTitles: string[]; }
-type Tab = "preview" | "polished" | "diff" | "changes" | "analysis" | "interview" | "score" | "keywordbank" | "history";
+type Tab = "preview" | "polished" | "diff" | "changes" | "health" | "analysis" | "interview" | "score" | "keywordbank" | "history";
+interface HealthIssue { check: string; severity: "blocker" | "warning"; location: string; evidence: string; fixHint: string; }
+interface HealthReport { issues: HealthIssue[]; blockerCount: number; warningCount: number; passed: boolean; }
+const CHECK_LABELS: Record<string, string> = {
+  number_conservation: "数字守恒", timeline: "时间线", keyword_coverage: "关键词覆盖",
+  jd_copy: "JD照搬", structure: "结构完整", keyword_stuffing: "关键词实词化",
+  age_tenure: "年龄/工龄", english_mixing: "中英夹杂",
+  // LLM 审查类型
+  fabrication: "虚构经历", job_duty_copy: "照搬JD", internal_codename: "内部代号",
+  jargon: "外行可读性", empty_bullets: "职责流水账", changes_mismatch: "修改说明不符",
+  summary_structure: "简介结构", career_arc: "成长弧线", project_context: "项目三问", value_anchor: "价值锚点",
+};
+const STAGE_LABELS: Record<string, string> = {
+  draft: "AI 润色简历", checks: "确定性体检", review: "AI 对抗审查",
+  revise: "修订润色稿", finalize: "生成评分与面试建议",
+};
+interface ReviewReportInfo { iterations: number; passed: boolean; issues: HealthIssue[]; elapsedMs: number; }
+type DeepPolishResult = PolishResult & { reviewReport?: ReviewReportInfo };
 
 export default function Home() {
   const [resume, setResume] = useState("");
@@ -46,6 +63,17 @@ export default function Home() {
   const [kwSort, setKwSort] = useState<"count" | "recent">("count");
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [polishStep, setPolishStep] = useState(0); // 0=空闲 1=分析JD 2=润色简历 3=生成评分/面试建议
+  const [health, setHealth] = useState<HealthReport | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [deepMode, setDeepMode] = useState(true);
+  const [agentStage, setAgentStage] = useState("");
+  const [jdUrl, setJdUrl] = useState("");
+  const [jdUrlLoading, setJdUrlLoading] = useState(false);
+  const [jdUrlError, setJdUrlError] = useState("");
+  const [research, setResearch] = useState<{
+    loading: boolean; context?: string; summary?: string;
+    sources?: { title: string; url: string; snippet: string }[]; error?: string;
+  } | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollCountRef = useRef(0);
 
@@ -102,12 +130,59 @@ export default function Home() {
 
   function handleClearAll() {
     if (!confirm("清空当前输入的简历和JD？")) return;
-    setResume(""); setJd(""); setError(""); setResult(null);
+    setResume(""); setJd(""); setError(""); setResult(null); setHealth(null);
   }
 
-  async function handlePolish() {
-    if (!resume.trim() || !jd.trim()) { setError("请填写简历和JD"); return; }
-    setLoading(true); setError(""); setResult(null); setActiveTab("preview");
+  /** 体检:对润色稿跑确定性检查(纯规则,零 LLM 调用),只报告不闭环 */
+  async function runHealthCheck(original: string, jdText: string, polished: string, matched: string[], template: TemplateId) {
+    setHealthLoading(true);
+    try {
+      const res = await fetch("/api/checks", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ original, jd: jdText, polished, matchedKeywords: matched, templateId: template }),
+      });
+      const data = await res.json() as HealthReport & { error?: string };
+      if (res.ok) setHealth(data); // 体检是辅助功能,失败静默
+    } catch { /* ignore */ }
+    finally { setHealthLoading(false); }
+  }
+
+  /** 统一收尾:展示结果、水合体检报告(深度模式直接用循环产出,简单模式补一次 /api/checks)、词库与历史 */
+  function applyResult(data: DeepPolishResult) {
+    setResult(data);
+    const report = data.reviewReport;
+    if (report) {
+      const blockerCount = report.issues.filter((i) => i.severity === "blocker").length;
+      setHealth({ issues: report.issues, blockerCount, warningCount: report.issues.length - blockerCount, passed: report.passed });
+    } else {
+      runHealthCheck(resume, jd, data.polishedResume, data.matchedKeywords || [], selectedTemplate);
+    }
+    if (data.jdKeywords && data.jdKeywords.length > 0) submitKeywords(data.jdKeywords, importedInfo?.jobTitle || "");
+    // 保存到历史记录
+    addHistory({
+      templateName: TEMPLATES[selectedTemplate].name,
+      formatName: FORMATS[selectedFormat].name,
+      jobTitle: importedInfo?.jobTitle || "",
+      company: importedInfo?.company || "",
+      originalResume: resume,
+      polishedResume: data.polishedResume,
+      jdKeywords: data.jdKeywords || [],
+      matchedKeywords: data.matchedKeywords || [],
+      missingKeywords: data.missingKeywords || [],
+      suggestions: data.suggestions || [],
+      score: data.resumeScore?.total,
+    });
+    setHistory(getHistory());
+  }
+
+  function beginRun(): boolean {
+    if (!resume.trim() || !jd.trim()) { setError("请填写简历和JD"); return false; }
+    setLoading(true); setError(""); setResult(null); setActiveTab("preview"); setHealth(null); setAgentStage("");
+    return true;
+  }
+
+  /** 简单模式:旧单次调用(/api/polish,降级基线) */
+  async function runSimple() {
     setPolishStep(1);
     // 模拟分步进度（实际 API 一次调用，这里用计时器给用户反馈）
     const stepTimer1 = setTimeout(() => setPolishStep(2), 3000);
@@ -120,30 +195,74 @@ export default function Home() {
       const data = await res.json() as PolishResult & { error?: string };
       if (!res.ok) { setError(data.error || "请求失败"); }
       else {
-        setResult(data);
-        if (data.jdKeywords && data.jdKeywords.length > 0) submitKeywords(data.jdKeywords, importedInfo?.jobTitle || "");
-        // 保存到历史记录
-        addHistory({
-          templateName: TEMPLATES[selectedTemplate].name,
-          formatName: FORMATS[selectedFormat].name,
-          jobTitle: importedInfo?.jobTitle || "",
-          company: importedInfo?.company || "",
-          originalResume: resume,
-          polishedResume: data.polishedResume,
-          jdKeywords: data.jdKeywords || [],
-          matchedKeywords: data.matchedKeywords || [],
-          missingKeywords: data.missingKeywords || [],
-          suggestions: data.suggestions || [],
-          score: data.resumeScore?.total,
-        });
-        setHistory(getHistory());
+        applyResult(data);
         clearTimeout(stepTimer1); clearTimeout(stepTimer2); setPolishStep(0);
       }
     } catch (e) { setError(e instanceof Error ? e.message : "网络错误"); }
     finally { setLoading(false); clearTimeout(stepTimer1); clearTimeout(stepTimer2); setPolishStep(0); }
   }
 
+  /** 深度模式:agent 循环,SSE 流式(/api/polish/agent) */
+  async function runDeep() {
+    setPolishStep(1);
+    try {
+      const res = await fetch("/api/polish/agent", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resume, jd, templateId: selectedTemplate, formatId: selectedFormat, companyContext: research?.context }),
+      });
+      if (!res.ok || !res.body) {
+        const err = await res.json().catch(() => null) as { error?: string } | null;
+        throw new Error(err?.error || `请求失败(${res.status})`);
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let finished = false;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const parts = buf.split("\n\n");
+        buf = parts.pop() ?? "";
+        for (const part of parts) {
+          const lines = part.split("\n");
+          const type = (lines.find((l) => l.startsWith("event: ")) ?? "").slice(7).trim();
+          const dataLine = lines.find((l) => l.startsWith("data: "));
+          if (!type || !dataLine) continue;
+          const payload = JSON.parse(dataLine.slice(6)) as {
+            stage?: string; status?: string; iteration?: number;
+            verdict?: string; blockerCount?: number; message?: string;
+          };
+          if (type === "stage") {
+            const label = STAGE_LABELS[payload.stage ?? ""] ?? payload.stage ?? "";
+            const round = (payload.iteration ?? 0) > 0 ? `(第${(payload.iteration ?? 0) + 1}轮)` : "";
+            setPolishStep(payload.stage === "finalize" ? 3 : 2);
+            setAgentStage(payload.status === "start" ? `${label}${round}…` : "");
+          } else if (type === "issues") {
+            setAgentStage(payload.verdict === "revise" ? `发现 ${payload.blockerCount} 个硬伤,自动修订中…` : "审查通过,生成评分与面试建议…");
+          } else if (type === "result") {
+            finished = true;
+            applyResult(payload as unknown as DeepPolishResult);
+          } else if (type === "error") {
+            throw new Error(payload.message || "深度润色失败");
+          }
+        }
+      }
+      if (!finished) throw new Error("连接中断,请重试");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "网络错误");
+    } finally {
+      setLoading(false); setPolishStep(0); setAgentStage("");
+    }
+  }
+
+  async function handlePolish() {
+    if (!beginRun()) return;
+    if (deepMode) await runDeep(); else await runSimple();
+  }
+
   function restoreHistory(item: HistoryItem) {
+    setHealth(null);
     setResume(item.originalResume);
     setResult({
       polishedResume: item.polishedResume,
@@ -170,7 +289,47 @@ export default function Home() {
   function handleCopy() { if (!result?.polishedResume) return; navigator.clipboard.writeText(result.polishedResume); setCopied(true); setTimeout(() => setCopied(false), 2000); }
   function handleExportMD() { if (!result?.polishedResume) return; const blob = new Blob([result.polishedResume], { type: "text/markdown;charset=utf-8" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "resume-polished.md"; a.click(); URL.revokeObjectURL(url); }
   function handlePrint() { window.print(); }
-  function clearImported() { setImportedInfo(null); }
+  function handleExportPDF() {
+    // 文本层守则:浏览器"另存为 PDF"保留文本层,ATS 可解析;截图类导出(html2canvas 等)会变成纯图片
+    if (confirm("将打开打印对话框——请选择「另存为 PDF」。此路径保留文本层,ATS 系统可解析;请勿用截图类工具导出(会变成纯图片)。")) handlePrint();
+  }
+  function clearImported() { setImportedInfo(null); setResearch(null); }
+
+  /** URL 抓取 JD(BOSS直聘有登录墙,该站走油猴脚本) */
+  async function importJdFromUrl() {
+    if (!jdUrl.trim()) return;
+    setJdUrlLoading(true); setJdUrlError("");
+    try {
+      const res = await fetch("/api/import-jd/url", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: jdUrl.trim() }),
+      });
+      const data = await res.json() as { title?: string; text?: string; error?: string };
+      if (!res.ok || !data.text) { setJdUrlError(data.error || "抓取失败"); }
+      else {
+        setJd(data.text);
+        setImportedInfo({ jobTitle: data.title || "", company: "", jobUrl: jdUrl.trim() });
+        setJdUrl("");
+      }
+    } catch { setJdUrlError("网络错误"); }
+    finally { setJdUrlLoading(false); }
+  }
+
+  /** 公司调研(可选,需配置 TAVILY_API_KEY 或 BOCHA_API_KEY);结果注入深度模式上下文 */
+  async function researchCompany() {
+    const company = importedInfo?.company?.trim() || window.prompt("输入要调研的公司名:") || "";
+    if (!company) return;
+    setResearch({ loading: true });
+    try {
+      const res = await fetch("/api/research/company", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ company }),
+      });
+      const data = await res.json() as { configured?: boolean; summary?: string; context?: string; sources?: { title: string; url: string; snippet: string }[]; error?: string };
+      if (!res.ok || data.error) { setResearch({ loading: false, error: data.error || "调研失败" }); }
+      else { setResearch({ loading: false, context: data.context, summary: data.summary, sources: data.sources }); }
+    } catch { setResearch({ loading: false, error: "网络错误" }); }
+  }
 
   // 草稿自动保存（防抖 2 秒）
   useEffect(() => {
@@ -272,7 +431,10 @@ export default function Home() {
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
               <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-500"></span><h2 className="text-sm font-semibold text-slate-700">目标职位描述 (JD)</h2></div>
-                <span className="text-xs text-slate-400">{jd.length} 字</span>
+                <div className="flex items-center gap-2">
+                  {research?.loading ? <span className="text-xs text-indigo-500">调研中…</span> : <button onClick={researchCompany} className="text-xs text-indigo-600 hover:text-indigo-700 font-medium" title="调研公司业务,注入润色上下文(需配置搜索 API)">🔍 调研</button>}
+                  <span className="text-xs text-slate-400">{jd.length} 字</span>
+                </div>
               </div>
               {importedInfo && (
                 <div className="px-4 py-2 bg-emerald-50 border-b border-emerald-100 flex items-center justify-between">
@@ -286,6 +448,27 @@ export default function Home() {
                   <a href="/boss-zhipin-jd-sender.user.js" download className="text-xs text-brand-600 hover:text-brand-700 font-medium">装脚本</a>
                 </div>
               )}
+              <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
+                <span className="text-xs text-slate-400 flex-shrink-0">🔗</span>
+                <input value={jdUrl} onChange={(e) => setJdUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && importJdFromUrl()} placeholder="粘贴职位链接,服务端抓取正文(BOSS直聘有登录墙,请用油猴脚本)…" className="flex-1 text-xs px-2.5 py-1.5 border border-slate-200 rounded-md bg-white focus:outline-none focus:border-brand-400" disabled={jdUrlLoading || loading} />
+                <button onClick={importJdFromUrl} disabled={jdUrlLoading || !jdUrl.trim() || loading} className="px-2.5 py-1.5 text-xs font-medium text-brand-700 bg-brand-50 border border-brand-200 rounded-md hover:bg-brand-100 disabled:opacity-40 transition flex-shrink-0">{jdUrlLoading ? "抓取中…" : "抓取"}</button>
+              </div>
+              {jdUrlError && <div className="px-4 py-1.5 bg-red-50 border-b border-red-100 text-xs text-red-600">{jdUrlError}</div>}
+              {research?.summary && (
+                <div className="px-4 py-2 bg-indigo-50 border-b border-indigo-100">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-indigo-700">🔍 公司调研(已注入深度润色上下文)</span>
+                    <button onClick={() => setResearch(null)} className="text-xs text-slate-400 hover:text-slate-600">✕</button>
+                  </div>
+                  <p className="text-xs text-slate-600 whitespace-pre-wrap">{research.summary.slice(0, 400)}</p>
+                  {research.sources && research.sources.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      {research.sources.slice(0, 3).map((s, i) => <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-indigo-500 underline truncate max-w-[200px] inline-block">{s.title}</a>)}
+                    </div>
+                  )}
+                </div>
+              )}
+              {research?.error && <div className="px-4 py-1.5 bg-amber-50 border-b border-amber-100 text-xs text-amber-700">{research.error}</div>}
               <textarea value={jd} onChange={(e) => setJd(e.target.value)} placeholder="粘贴JD或通过油猴脚本自动导入…" className="w-full h-32 p-4 text-sm text-slate-800 resize-y focus:outline-none rounded-xl placeholder:text-slate-400" disabled={loading} />
             </div>
           </div>
@@ -294,8 +477,12 @@ export default function Home() {
           <div className="space-y-4">
             <div className="flex items-center gap-3 flex-wrap">
               <button onClick={handlePolish} disabled={loading || !resume.trim() || !jd.trim()} className="px-6 py-3 bg-gradient-to-r from-brand-600 to-brand-700 text-white text-sm font-medium rounded-lg hover:from-brand-700 hover:to-brand-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-md flex items-center gap-2">
-                {loading ? (<><span className="loading-dot w-1.5 h-1.5 rounded-full bg-white inline-block"></span><span className="loading-dot w-1.5 h-1.5 rounded-full bg-white inline-block"></span><span className="loading-dot w-1.5 h-1.5 rounded-full bg-white inline-block"></span><span className="ml-1">{polishStep === 1 ? "分析JD关键词…" : polishStep === 2 ? "润色简历内容…" : polishStep === 3 ? "生成评分和面试建议…" : "润色中…"}</span></>) : (<>✨ 开始润色</>)}
+                {loading ? (<><span className="loading-dot w-1.5 h-1.5 rounded-full bg-white inline-block"></span><span className="loading-dot w-1.5 h-1.5 rounded-full bg-white inline-block"></span><span className="loading-dot w-1.5 h-1.5 rounded-full bg-white inline-block"></span><span className="ml-1">{agentStage || (polishStep === 1 ? "分析JD关键词…" : polishStep === 2 ? "润色简历内容…" : polishStep === 3 ? "生成评分和面试建议…" : "润色中…")}</span></>) : (<>✨ 开始润色</>)}
               </button>
+              <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
+                <input type="checkbox" checked={deepMode} onChange={(e) => setDeepMode(e.target.checked)} disabled={loading} className="accent-brand-600" />
+                🛡 深度模式
+              </label>
               {error && <span className="text-sm text-red-600">{error}</span>}
             </div>
 
@@ -307,6 +494,7 @@ export default function Home() {
                     <TabButton active={activeTab === "polished"} onClick={() => setActiveTab("polished")}>纯文本</TabButton>
                     <TabButton active={activeTab === "diff"} onClick={() => setActiveTab("diff")}>Diff</TabButton>
                     {result.changes.length > 0 && <TabButton active={activeTab === "changes"} onClick={() => setActiveTab("changes")}>修改({result.changes.length})</TabButton>}
+                    <TabButton active={activeTab === "health"} onClick={() => setActiveTab("health")}>🛡 体检{health && !healthLoading && (health.blockerCount > 0 ? `(${health.blockerCount})` : "✓")}</TabButton>
                     <TabButton active={activeTab === "analysis"} onClick={() => setActiveTab("analysis")}>关键词</TabButton>
                     {hasInterviewPrep && <TabButton active={activeTab === "interview"} onClick={() => setActiveTab("interview")}>🎯 面试</TabButton>}
                     {hasScore && <TabButton active={activeTab === "score"} onClick={() => setActiveTab("score")}>📊 评分</TabButton>}
@@ -315,6 +503,7 @@ export default function Home() {
                     <div className="ml-auto flex items-center gap-2 py-2 pr-2 flex-shrink-0">
                       <button onClick={handleCopy} className="px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50 transition">{copied ? "✓" : "📋"}</button>
                       <button onClick={handleExportMD} className="px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50 transition">⬇</button>
+                      <button onClick={handleExportPDF} title="另存为 PDF(保留文本层,ATS 可解析)" className="px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50 transition">PDF</button>
                       <button onClick={handlePrint} className="px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50 transition">🖨</button>
                     </div>
                   </div>
@@ -324,6 +513,47 @@ export default function Home() {
                     {activeTab === "polished" && <pre className="whitespace-pre-wrap text-sm text-slate-800 leading-relaxed font-sans">{result.polishedResume}</pre>}
                     {activeTab === "diff" && (<div><div className="flex items-center gap-4 mb-3 text-xs text-slate-500"><span className="flex items-center gap-1"><span className="w-3 h-3 inline-block bg-green-200 rounded"></span> 新增</span><span className="flex items-center gap-1"><span className="w-3 h-3 inline-block bg-red-200 rounded"></span> 删除</span></div><DiffView original={resume} modified={result.polishedResume} /></div>)}
                     {activeTab === "changes" && (<div className="space-y-3">{result.changes.map((change, idx) => (<div key={idx} className="border border-slate-200 rounded-lg p-3"><div className="flex items-start gap-2"><span className="flex-shrink-0 w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center mt-0.5">{idx + 1}</span><div className="flex-1 space-y-2"><div><span className="text-xs text-red-500 font-medium">原文：</span><span className="text-sm text-slate-600 line-through">{change.original}</span></div><div><span className="text-xs text-green-600 font-medium">修改：</span><span className="text-sm text-slate-800 font-medium">{change.modified}</span></div><div className="flex items-start gap-1.5"><span className="text-xs text-brand-600 font-medium mt-0.5">💡</span><span className="text-xs text-slate-500">{change.reason}</span></div></div></div></div>))}</div>)}
+                    {activeTab === "health" && (
+                      <div className="space-y-4">
+                        {healthLoading ? (
+                          <div className="flex items-center justify-center gap-2 py-8 text-sm text-slate-400"><span className="loading-dot w-1.5 h-1.5 rounded-full bg-brand-400 inline-block"></span><span>八项体检检查中…</span></div>
+                        ) : health ? (
+                          <>
+                            <div className={`rounded-lg p-3 text-sm font-medium ${health.passed ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                              {health.passed
+                                ? (health.warningCount > 0 ? `🛡 未发现硬伤,可以投递。另有 ${health.warningCount} 条提示建议人工确认。` : "🛡 八项检查全部通过,可以投递 🎉")
+                                : `🛡 发现 ${health.blockerCount} 个硬伤(虚构/照搬/编造类问题),建议修订后再投递;另有 ${health.warningCount} 条提示。`}
+                            </div>
+                            {(["blocker", "warning"] as const).map((sev) => {
+                              const list = health.issues.filter((i) => i.severity === sev);
+                              if (list.length === 0) return null;
+                              return (
+                                <div key={sev}>
+                                  <h3 className="text-sm font-semibold text-slate-700 mb-2">{sev === "blocker" ? "🚫 硬伤" : "⚠️ 提示"}<span className="ml-2 text-xs font-normal text-slate-400">({list.length})</span></h3>
+                                  <div className="space-y-2">
+                                    {list.map((issue, idx) => (
+                                      <div key={idx} className={`rounded-lg p-3 border ${sev === "blocker" ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"}`}>
+                                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                          <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${sev === "blocker" ? "bg-red-200 text-red-800" : "bg-amber-200 text-amber-800"}`}>{CHECK_LABELS[issue.check] || issue.check}</span>
+                                          <span className="text-xs text-slate-400">{issue.location}</span>
+                                        </div>
+                                        <p className="text-sm text-slate-700">{issue.evidence}</p>
+                                        <p className="text-xs text-slate-500 mt-1">💡 {issue.fixHint}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </>
+                        ) : (
+                          <div className="text-center py-8">
+                            <p className="text-sm text-slate-400">暂无体检报告</p>
+                            <p className="text-xs text-slate-300 mt-1">润色完成后自动生成;体检为本地确定性规则检查,不调用 AI</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {activeTab === "analysis" && (<div className="space-y-5"><div><h3 className="text-sm font-semibold text-slate-700 mb-2">✅ 已匹配<span className="ml-2 text-xs font-normal text-slate-400">({result.matchedKeywords.length})</span></h3><div className="flex flex-wrap gap-2">{result.matchedKeywords.length > 0 ? result.matchedKeywords.map((kw, idx) => <span key={idx} className="px-3 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">{kw}</span>) : <span className="text-xs text-slate-400">暂无</span>}</div></div><div><h3 className="text-sm font-semibold text-slate-700 mb-2">❌ 缺失<span className="ml-2 text-xs font-normal text-slate-400">({result.missingKeywords.length})</span></h3><div className="flex flex-wrap gap-2">{result.missingKeywords.length > 0 ? result.missingKeywords.map((kw, idx) => <span key={idx} className="px-3 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-full">{kw}</span>) : <span className="text-xs text-green-600">全覆盖 🎉</span>}</div></div><div><h3 className="text-sm font-semibold text-slate-700 mb-2">📋 全览<span className="ml-2 text-xs font-normal text-slate-400">({result.jdKeywords.length})</span></h3><div className="flex flex-wrap gap-2">{result.jdKeywords.map((kw, idx) => <span key={idx} className="px-3 py-1 text-xs font-medium bg-slate-100 text-slate-700 rounded-full">{kw}</span>)}</div></div>{result.suggestions.length > 0 && (<div><h3 className="text-sm font-semibold text-slate-700 mb-2">💡 建议</h3><ul className="space-y-2">{result.suggestions.map((sug, idx) => <li key={idx} className="flex items-start gap-2 text-sm text-slate-600 bg-amber-50 rounded-lg p-2.5"><span className="text-amber-500 mt-0.5">▸</span><span>{sug}</span></li>)}</ul></div>)}</div>)}
                     {activeTab === "interview" && hasInterviewPrep && result.interviewPrep && (
                       <div className="space-y-5">
@@ -423,6 +653,13 @@ export default function Home() {
                 <div className="flex flex-col items-center justify-center py-24 text-center">
                   <div className="text-5xl mb-4">📄</div>
                   {loading ? (
+                    deepMode ? (
+                      <div className="space-y-3 text-center">
+                        <p className="text-brand-600 text-sm font-medium">{agentStage || "深度润色启动中…"}</p>
+                        <p className="text-xs text-slate-300 max-w-xs mx-auto">生成 → 确定性体检 → AI 对抗审查 → 不通过自动修订(最多 3 轮)</p>
+                        <p className="text-xs text-slate-300 max-w-xs mx-auto">残留问题会如实展示在「🛡 体检」报告里,不假装通过</p>
+                      </div>
+                    ) : (
                     <div className="space-y-4">
                       <p className="text-slate-400 text-sm">AI 正在处理…</p>
                       <div className="space-y-2 text-left max-w-xs mx-auto">
@@ -439,6 +676,7 @@ export default function Home() {
                         ))}
                       </div>
                     </div>
+                    )
                   )
                   : error ? <div><p className="text-red-500 text-sm mb-3">{error}</p>{error.includes("401") && <div className="text-xs text-slate-500 bg-slate-50 rounded-lg p-3 max-w-md text-left"><p className="font-semibold mb-1">🔑 API Key 排查：</p><ol className="space-y-1 list-decimal list-inside"><li>确认 .env.local Key 格式正确</li><li>去 platform.deepseek.com 确认有效</li><li>确认账户有余额</li><li>改完后重启应用</li></ol></div>}</div>
                   : (<><p className="text-slate-400 text-sm">选择风格+格式+主题，粘贴简历和JD后润色</p><p className="text-slate-300 text-xs mt-1">或点右上角「📝 填入示例」快速体验</p><div className="mt-6 max-w-md text-left bg-slate-50 rounded-lg p-4"><p className="text-xs font-semibold text-slate-600 mb-2">🚀 快速开始</p><ol className="text-xs text-slate-500 space-y-1.5"><li>1. 点 <button onClick={fillExample} className="text-amber-600 underline font-medium">📝填入示例</button> 快速体验</li><li>2. 或用模版填空 → 选风格 → 粘贴JD → 润色</li><li>3. 预览美化简历 → 查看评分/面试准备</li><li>4. 装 <a href="/boss-zhipin-jd-sender.user.js" download className="text-brand-600 underline">油猴脚本</a> 从BOSS直聘一键导入JD</li></ol></div></>)}

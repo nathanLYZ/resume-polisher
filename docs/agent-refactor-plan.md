@@ -170,7 +170,7 @@ for (let i = 0; i <= MAX_ITERATIONS; i++) {
 
 ### 2.6 依赖与文件清单
 
-新增依赖:`ai`、`@ai-sdk/deepseek`、`zod`
+新增依赖:`zod`。(实现说明:reviewer 需要的只是「JSON 输出 + zod 校验 + 失败重试」,用现有 `callDeepSeek` 的 jsonMode 即可等价实现;`ai`/`@ai-sdk/deepseek` 的工具调用循环能力留到 Phase 2 引入。)
 
 ```
 新增
@@ -222,6 +222,12 @@ for (let i = 0; i <= MAX_ITERATIONS; i++) {
 **与 senior 模板「年龄策略」的冲突消解:** senior 模板第 8 条建议"行业经验写 10+、技术年限拆开写",与 03-1"不放大工龄"不矛盾——边界定为:总结里出现**一次**总年限合法("10+ 年"),检查器⑦只对「新增年龄表述」「重复堆叠年限」报警;senior 模板原有的年限拆写规则保留不动。
 
 ## 3. Phase 2:工具化(~3 天)
+
+> **实施记录(2026-09-16,四项全部落地):**
+> ① `POST /api/import-jd/url` + `lib/ssrf.ts`(主机名级 SSRF 基线拦截:私网/环回/链路本地/metadata 端点/内网后缀)+ `lib/jdExtract.ts`(Readability 为主、剥壳兜底);
+> ② 词库三档存储 `lib/kwStore.ts`(Upstash REST → 本地文件 `.data/`(已 gitignore)→ 内存),高频词自动注入起草 prompt(带红线约束);PDF 走浏览器打印路径(保留文本层),新增 PDF 按钮附"勿用截图类导出"提示;
+> ③ `POST /api/research/company` 双支持 TAVILY_API_KEY / BOCHA_API_KEY,未配置时 `configured:false` 优雅降级;调研上下文经 `companyContext` 注入 agent 起草(仅校准表达,不得虚构经历);
+> ④ 测试:`phase2.test.ts` 20 例(守卫/抽取/注入),全量 57/57 通过;四端点本地 smoke 验证通过。
 
 按价值排序:
 
