@@ -1,9 +1,15 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import {
+  Sparkles, Download, Clipboard, Check, FileDown, FileType2, Printer, Eye, FileText,
+  GitCompare, ListChecks, ShieldCheck, Tags, MessagesSquare, BarChart3, BookOpen, History,
+} from "lucide-react";
 import DiffView from "@/components/DiffView";
 import ResumePreview from "@/components/ResumePreview";
 import ResumeTemplateForm from "@/components/ResumeTemplateForm";
+import HealthReportView from "@/components/HealthReportView";
+import AgentProgress from "@/components/AgentProgress";
 import { TEMPLATES, type TemplateId } from "@/lib/templates";
 import { FORMATS, type FormatId } from "@/lib/resumeFormats";
 import { THEME_LIST, type ThemeId } from "@/lib/resumeThemes";
@@ -31,15 +37,6 @@ interface KeywordEntry { keyword: string; count: number; firstSeen: number; last
 type Tab = "preview" | "polished" | "diff" | "changes" | "health" | "analysis" | "interview" | "score" | "keywordbank" | "history";
 interface HealthIssue { check: string; severity: "blocker" | "warning"; location: string; evidence: string; fixHint: string; }
 interface HealthReport { issues: HealthIssue[]; blockerCount: number; warningCount: number; passed: boolean; }
-const CHECK_LABELS: Record<string, string> = {
-  number_conservation: "数字守恒", timeline: "时间线", keyword_coverage: "关键词覆盖",
-  jd_copy: "JD照搬", structure: "结构完整", keyword_stuffing: "关键词实词化",
-  age_tenure: "年龄/工龄", english_mixing: "中英夹杂", page_estimate: "篇幅估算",
-  // LLM 审查类型
-  fabrication: "虚构经历", job_duty_copy: "照搬JD", internal_codename: "内部代号",
-  jargon: "外行可读性", empty_bullets: "职责流水账", changes_mismatch: "修改说明不符",
-  summary_structure: "简介结构", career_arc: "成长弧线", project_context: "项目三问", value_anchor: "价值锚点",
-};
 const STAGE_LABELS: Record<string, string> = {
   draft: "AI 润色简历", checks: "确定性体检", review: "AI 对抗审查",
   revise: "修订润色稿", finalize: "生成评分与面试建议",
@@ -68,6 +65,7 @@ export default function Home() {
   const [healthLoading, setHealthLoading] = useState(false);
   const [deepMode, setDeepMode] = useState(true);
   const [agentStage, setAgentStage] = useState("");
+  const [agentStep, setAgentStep] = useState(0);
   const [jdUrl, setJdUrl] = useState("");
   const [jdUrlLoading, setJdUrlLoading] = useState(false);
   const [jdUrlError, setJdUrlError] = useState("");
@@ -237,10 +235,14 @@ export default function Home() {
           if (type === "stage") {
             const label = payload.detail || STAGE_LABELS[payload.stage ?? ""] || payload.stage || "";
             const round = (payload.iteration ?? 0) > 0 ? `(第${(payload.iteration ?? 0) + 1}轮)` : "";
+            const stepMap: Record<string, number> = { draft: 0, checks: 1, review: 2, revise: 3, finalize: 4 };
+            const st = payload.stage ?? "";
+            if (st in stepMap) setAgentStep(stepMap[st]);
             setPolishStep(payload.stage === "finalize" ? 3 : 2);
             setAgentStage(payload.status === "start" ? `${label}${round}…` : "");
           } else if (type === "issues") {
-            setAgentStage(payload.verdict === "revise" ? `发现 ${payload.blockerCount} 个硬伤,自动修订中…` : "审查通过,生成评分与面试建议…");
+            if (payload.verdict === "revise") { setAgentStep(3); setAgentStage(`提交被拒:发现 ${payload.blockerCount} 个硬伤,自动修订中…`); }
+            else { setAgentStage("审查通过,生成评分与面试建议…"); }
           } else if (type === "result") {
             finished = true;
             applyResult(payload as unknown as DeepPolishResult);
@@ -365,13 +367,22 @@ export default function Home() {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10 print:hidden">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-white text-lg font-bold">简</div>
-            <div><h1 className="text-lg font-bold text-slate-900">简历润色助手</h1><p className="text-xs text-slate-500">根据JD智能优化，提升面试通过率</p></div>
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-white text-lg font-bold shadow-sm">简</div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg font-bold text-slate-900 tracking-tight">简历润色助手</h1>
+                <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-brand-100 bg-brand-50 px-2 py-0.5 text-[10px] font-medium text-brand-700">Agent 深度模式</span>
+              </div>
+              <p className="text-xs text-slate-500">根据JD智能优化，体检 + 对抗审查,不虚构经历</p>
+            </div>
           </div>
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <button onClick={fillExample} className="text-amber-600 hover:text-amber-700 font-medium transition">📝 填入示例</button>
-            <span className="hidden sm:inline">·</span>
-            <a href="/boss-zhipin-jd-sender.user.js" download className="text-brand-600 hover:text-brand-700 font-medium">⬇ 油猴脚本</a>
+          <div className="flex items-center gap-2">
+            <button onClick={fillExample} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition">
+              <Sparkles className="h-3.5 w-3.5 text-amber-500" />填入示例
+            </button>
+            <a href="/boss-zhipin-jd-sender.user.js" download className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition">
+              <Download className="h-3.5 w-3.5 text-brand-500" />油猴脚本
+            </a>
           </div>
         </div>
       </header>
@@ -480,9 +491,10 @@ export default function Home() {
               <button onClick={handlePolish} disabled={loading || !resume.trim() || !jd.trim()} className="px-6 py-3 bg-gradient-to-r from-brand-600 to-brand-700 text-white text-sm font-medium rounded-lg hover:from-brand-700 hover:to-brand-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-md flex items-center gap-2">
                 {loading ? (<><span className="loading-dot w-1.5 h-1.5 rounded-full bg-white inline-block"></span><span className="loading-dot w-1.5 h-1.5 rounded-full bg-white inline-block"></span><span className="loading-dot w-1.5 h-1.5 rounded-full bg-white inline-block"></span><span className="ml-1">{agentStage || (polishStep === 1 ? "分析JD关键词…" : polishStep === 2 ? "润色简历内容…" : polishStep === 3 ? "生成评分和面试建议…" : "润色中…")}</span></>) : (<>✨ 开始润色</>)}
               </button>
-              <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
-                <input type="checkbox" checked={deepMode} onChange={(e) => setDeepMode(e.target.checked)} disabled={loading} className="accent-brand-600" />
-                🛡 深度模式
+              <label className="inline-flex cursor-pointer items-center gap-2 select-none" title="生成 → 体检 → 对抗审查 → 修订,模型自主驱动">
+                <input type="checkbox" className="peer sr-only" checked={deepMode} onChange={(e) => setDeepMode(e.target.checked)} disabled={loading} />
+                <span className="relative h-5 w-9 rounded-full bg-slate-200 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-brand-600 peer-checked:after:translate-x-4 peer-disabled:opacity-50" />
+                <span className="text-xs font-medium text-slate-600">深度模式</span>
               </label>
               {error && <span className="text-sm text-red-600">{error}</span>}
             </div>
@@ -491,21 +503,21 @@ export default function Home() {
               {result ? (
                 <>
                   <div className="border-b border-slate-100 flex items-center gap-1 px-2 overflow-x-auto">
-                    <TabButton active={activeTab === "preview"} onClick={() => setActiveTab("preview")}>🎨 预览</TabButton>
-                    <TabButton active={activeTab === "polished"} onClick={() => setActiveTab("polished")}>纯文本</TabButton>
-                    <TabButton active={activeTab === "diff"} onClick={() => setActiveTab("diff")}>Diff</TabButton>
-                    {result.changes.length > 0 && <TabButton active={activeTab === "changes"} onClick={() => setActiveTab("changes")}>修改({result.changes.length})</TabButton>}
-                    <TabButton active={activeTab === "health"} onClick={() => setActiveTab("health")}>🛡 体检{health && !healthLoading && (health.blockerCount > 0 ? `(${health.blockerCount})` : "✓")}</TabButton>
-                    <TabButton active={activeTab === "analysis"} onClick={() => setActiveTab("analysis")}>关键词</TabButton>
-                    {hasInterviewPrep && <TabButton active={activeTab === "interview"} onClick={() => setActiveTab("interview")}>🎯 面试</TabButton>}
-                    {hasScore && <TabButton active={activeTab === "score"} onClick={() => setActiveTab("score")}>📊 评分</TabButton>}
-                    <TabButton active={activeTab === "keywordbank"} onClick={() => setActiveTab("keywordbank")}>📚 词库</TabButton>
-                    {history.length > 0 && <TabButton active={activeTab === "history"} onClick={() => setActiveTab("history")}>🕐 历史({history.length})</TabButton>}
+                    <TabButton active={activeTab === "preview"} onClick={() => setActiveTab("preview")}><Eye className="h-3.5 w-3.5" />预览</TabButton>
+                    <TabButton active={activeTab === "polished"} onClick={() => setActiveTab("polished")}><FileText className="h-3.5 w-3.5" />纯文本</TabButton>
+                    <TabButton active={activeTab === "diff"} onClick={() => setActiveTab("diff")}><GitCompare className="h-3.5 w-3.5" />Diff</TabButton>
+                    {result.changes.length > 0 && <TabButton active={activeTab === "changes"} onClick={() => setActiveTab("changes")}><ListChecks className="h-3.5 w-3.5" />修改({result.changes.length})</TabButton>}
+                    <TabButton active={activeTab === "health"} onClick={() => setActiveTab("health")}><ShieldCheck className="h-3.5 w-3.5" />体检{health && !healthLoading && (health.blockerCount > 0 ? `(${health.blockerCount})` : <Check className="h-3 w-3 text-green-500" />)}</TabButton>
+                    <TabButton active={activeTab === "analysis"} onClick={() => setActiveTab("analysis")}><Tags className="h-3.5 w-3.5" />关键词</TabButton>
+                    {hasInterviewPrep && <TabButton active={activeTab === "interview"} onClick={() => setActiveTab("interview")}><MessagesSquare className="h-3.5 w-3.5" />面试</TabButton>}
+                    {hasScore && <TabButton active={activeTab === "score"} onClick={() => setActiveTab("score")}><BarChart3 className="h-3.5 w-3.5" />评分</TabButton>}
+                    <TabButton active={activeTab === "keywordbank"} onClick={() => setActiveTab("keywordbank")}><BookOpen className="h-3.5 w-3.5" />词库</TabButton>
+                    {history.length > 0 && <TabButton active={activeTab === "history"} onClick={() => setActiveTab("history")}><History className="h-3.5 w-3.5" />历史({history.length})</TabButton>}
                     <div className="ml-auto flex items-center gap-2 py-2 pr-2 flex-shrink-0">
-                      <button onClick={handleCopy} className="px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50 transition">{copied ? "✓" : "📋"}</button>
-                      <button onClick={handleExportMD} className="px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50 transition">⬇</button>
-                      <button onClick={handleExportPDF} title="另存为 PDF(保留文本层,ATS 可解析)" className="px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50 transition">PDF</button>
-                      <button onClick={handlePrint} className="px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50 transition">🖨</button>
+                      <button onClick={handleCopy} title="复制润色结果" className="p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-md transition">{copied ? <Check className="h-4 w-4 text-green-500" /> : <Clipboard className="h-4 w-4" />}</button>
+                      <button onClick={handleExportMD} title="导出 Markdown" className="p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-md transition"><FileDown className="h-4 w-4" /></button>
+                      <button onClick={handleExportPDF} title="另存为 PDF(保留文本层,ATS 可解析)" className="p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-md transition"><FileType2 className="h-4 w-4" /></button>
+                      <button onClick={handlePrint} title="打印" className="p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-md transition"><Printer className="h-4 w-4" /></button>
                     </div>
                   </div>
 
@@ -514,48 +526,7 @@ export default function Home() {
                     {activeTab === "polished" && <pre className="whitespace-pre-wrap text-sm text-slate-800 leading-relaxed font-sans">{result.polishedResume}</pre>}
                     {activeTab === "diff" && (<div><div className="flex items-center gap-4 mb-3 text-xs text-slate-500"><span className="flex items-center gap-1"><span className="w-3 h-3 inline-block bg-green-200 rounded"></span> 新增</span><span className="flex items-center gap-1"><span className="w-3 h-3 inline-block bg-red-200 rounded"></span> 删除</span></div><DiffView original={resume} modified={result.polishedResume} /></div>)}
                     {activeTab === "changes" && (<div className="space-y-3">{result.changes.map((change, idx) => (<div key={idx} className="border border-slate-200 rounded-lg p-3"><div className="flex items-start gap-2"><span className="flex-shrink-0 w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center mt-0.5">{idx + 1}</span><div className="flex-1 space-y-2"><div><span className="text-xs text-red-500 font-medium">原文：</span><span className="text-sm text-slate-600 line-through">{change.original}</span></div><div><span className="text-xs text-green-600 font-medium">修改：</span><span className="text-sm text-slate-800 font-medium">{change.modified}</span></div><div className="flex items-start gap-1.5"><span className="text-xs text-brand-600 font-medium mt-0.5">💡</span><span className="text-xs text-slate-500">{change.reason}</span></div></div></div></div>))}</div>)}
-                    {activeTab === "health" && (
-                      <div className="space-y-4">
-                        {healthLoading ? (
-                          <div className="flex items-center justify-center gap-2 py-8 text-sm text-slate-400"><span className="loading-dot w-1.5 h-1.5 rounded-full bg-brand-400 inline-block"></span><span>八项体检检查中…</span></div>
-                        ) : health ? (
-                          <>
-                            <div className={`rounded-lg p-3 text-sm font-medium ${health.passed ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
-                              {health.passed
-                                ? (health.warningCount > 0 ? `🛡 未发现硬伤,可以投递。另有 ${health.warningCount} 条提示建议人工确认。` : "🛡 全部检查通过,可以投递 🎉")
-                                : `🛡 发现 ${health.blockerCount} 个硬伤(虚构/照搬/编造类问题),建议修订后再投递;另有 ${health.warningCount} 条提示。`}
-                            </div>
-                            <p className="text-xs text-slate-400">📄 预计篇幅:约 {Math.max(1, Math.round(estimatePages(result.polishedResume) * 10) / 10)} 页(纯文本行数估算,最终以打印预览为准)</p>
-                            {(["blocker", "warning"] as const).map((sev) => {
-                              const list = health.issues.filter((i) => i.severity === sev);
-                              if (list.length === 0) return null;
-                              return (
-                                <div key={sev}>
-                                  <h3 className="text-sm font-semibold text-slate-700 mb-2">{sev === "blocker" ? "🚫 硬伤" : "⚠️ 提示"}<span className="ml-2 text-xs font-normal text-slate-400">({list.length})</span></h3>
-                                  <div className="space-y-2">
-                                    {list.map((issue, idx) => (
-                                      <div key={idx} className={`rounded-lg p-3 border ${sev === "blocker" ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"}`}>
-                                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                          <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${sev === "blocker" ? "bg-red-200 text-red-800" : "bg-amber-200 text-amber-800"}`}>{CHECK_LABELS[issue.check] || issue.check}</span>
-                                          <span className="text-xs text-slate-400">{issue.location}</span>
-                                        </div>
-                                        <p className="text-sm text-slate-700">{issue.evidence}</p>
-                                        <p className="text-xs text-slate-500 mt-1">💡 {issue.fixHint}</p>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </>
-                        ) : (
-                          <div className="text-center py-8">
-                            <p className="text-sm text-slate-400">暂无体检报告</p>
-                            <p className="text-xs text-slate-300 mt-1">润色完成后自动生成;体检为本地确定性规则检查,不调用 AI</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    <HealthReportView health={health} loading={healthLoading} estPages={estimatePages(result.polishedResume)} />
                     {activeTab === "analysis" && (<div className="space-y-5"><div><h3 className="text-sm font-semibold text-slate-700 mb-2">✅ 已匹配<span className="ml-2 text-xs font-normal text-slate-400">({result.matchedKeywords.length})</span></h3><div className="flex flex-wrap gap-2">{result.matchedKeywords.length > 0 ? result.matchedKeywords.map((kw, idx) => <span key={idx} className="px-3 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">{kw}</span>) : <span className="text-xs text-slate-400">暂无</span>}</div></div><div><h3 className="text-sm font-semibold text-slate-700 mb-2">❌ 缺失<span className="ml-2 text-xs font-normal text-slate-400">({result.missingKeywords.length})</span></h3><div className="flex flex-wrap gap-2">{result.missingKeywords.length > 0 ? result.missingKeywords.map((kw, idx) => <span key={idx} className="px-3 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-full">{kw}</span>) : <span className="text-xs text-green-600">全覆盖 🎉</span>}</div></div><div><h3 className="text-sm font-semibold text-slate-700 mb-2">📋 全览<span className="ml-2 text-xs font-normal text-slate-400">({result.jdKeywords.length})</span></h3><div className="flex flex-wrap gap-2">{result.jdKeywords.map((kw, idx) => <span key={idx} className="px-3 py-1 text-xs font-medium bg-slate-100 text-slate-700 rounded-full">{kw}</span>)}</div></div>{result.suggestions.length > 0 && (<div><h3 className="text-sm font-semibold text-slate-700 mb-2">💡 建议</h3><ul className="space-y-2">{result.suggestions.map((sug, idx) => <li key={idx} className="flex items-start gap-2 text-sm text-slate-600 bg-amber-50 rounded-lg p-2.5"><span className="text-amber-500 mt-0.5">▸</span><span>{sug}</span></li>)}</ul></div>)}</div>)}
                     {activeTab === "interview" && hasInterviewPrep && result.interviewPrep && (
                       <div className="space-y-5">
@@ -656,10 +627,9 @@ export default function Home() {
                   <div className="text-5xl mb-4">📄</div>
                   {loading ? (
                     deepMode ? (
-                      <div className="space-y-3 text-center">
-                        <p className="text-brand-600 text-sm font-medium">{agentStage || "深度润色启动中…"}</p>
-                        <p className="text-xs text-slate-300 max-w-xs mx-auto">生成 → 确定性体检 → AI 对抗审查 → 不通过自动修订(最多 3 轮)</p>
-                        <p className="text-xs text-slate-300 max-w-xs mx-auto">残留问题会如实展示在「🛡 体检」报告里,不假装通过</p>
+                      <div className="space-y-4 py-2">
+                        <p className="text-slate-400 text-sm">深度润色处理中…</p>
+                        <AgentProgress step={agentStep} detail={agentStage || "正在启动 agent…"} />
                       </div>
                     ) : (
                     <div className="space-y-4">
@@ -694,5 +664,5 @@ export default function Home() {
 }
 
 function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return <button onClick={onClick} className={`px-3 py-3 text-sm font-medium border-b-2 transition whitespace-nowrap ${active ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-700"}`}>{children}</button>;
+  return <button onClick={onClick} className={`inline-flex items-center gap-1.5 px-3 py-3 text-sm font-medium border-b-2 transition whitespace-nowrap ${active ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-700"}`}>{children}</button>;
 }
