@@ -151,6 +151,26 @@ export default function Home() {
     finally { setHealthLoading(false); }
   }
 
+  /** 收尾补齐:主结果拿到后,异步补面试建议+评分(不占主请求时长;失败静默) */
+  async function runFinalize(original: string, jdText: string, polished: string) {
+    try {
+      const res = await fetch("/api/polish/finalize", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resume: original, jd: jdText, polished }),
+      });
+      if (!res.ok) return;
+      const data = await res.json() as { interviewPrep?: PolishResult["interviewPrep"]; resumeScore?: PolishResult["resumeScore"] };
+      // 合并进当前结果(用户可能已切换/重新润色,仅当结果还是这份时生效)
+      setResult((prev) => {
+        if (!prev || prev.polishedResume !== polished) return prev;
+        const merged = { ...prev };
+        if (data.interviewPrep?.likelyQuestions?.length) merged.interviewPrep = data.interviewPrep;
+        if (data.resumeScore?.total) merged.resumeScore = data.resumeScore;
+        return merged;
+      });
+    } catch { /* 收尾失败静默:主结果已交付,Tab 守卫隐藏 */ }
+  }
+
   /** ATS 筛选模拟:原文 vs 润色稿双份(确定性规则,零 LLM 调用) */
   async function runAtsScreen(original: string, jdText: string, polished: string, keywords: string[]) {
     setAtsLoading(true); setAtsError("");
@@ -170,6 +190,9 @@ export default function Home() {
   function applyResult(data: DeepPolishResult) {
     setResult(data);
     runAtsScreen(resume, jd, data.polishedResume, data.jdKeywords || []);
+    if (!data.interviewPrep?.likelyQuestions?.length && !data.resumeScore?.total) {
+      runFinalize(resume, jd, data.polishedResume); // 主结果缺收尾时异步补(深度模式已解耦)
+    }
     const report = data.reviewReport;
     if (report) {
       const blockerCount = report.issues.filter((i) => i.severity === "blocker").length;

@@ -15,25 +15,16 @@ import { createDeepSeek } from "@ai-sdk/deepseek";
 import { runAllChecks, hasBlocker } from "./checks";
 import { buildTools, type SubmitOutcome } from "./tools";
 import { draftOnce, type AgentRunInput } from "./loop";
-import { buildToolAgentSystemPrompt, buildInterviewPrepMessages, buildResumeScoreMessages } from "./prompts";
+import { buildToolAgentSystemPrompt } from "./prompts";
 import { topKeywordHints } from "../kwStore";
-import { callDeepSeek } from "../deepseek";
-import {
-  parseJSONLoose,
-  InterviewPrepSchema,
-  ResumeScoreSchema,
-  type AgentIssue,
-  type AgentResultPayload,
-  type DraftResult,
-} from "./schemas";
+import type { AgentIssue, AgentResultPayload, DraftResult } from "./schemas";
 
 export type Emit = (event: string, data: unknown) => void;
 
 const deepseek = createDeepSeek({ apiKey: process.env.DEEPSEEK_API_KEY ?? "" });
 
 const MAX_STEPS = 10; // 模型步数硬上限(含工具调用轮)
-const TOOL_LOOP_DEADLINE_MS = 42_000; // 超时后不再进新步骤
-const FINALIZE_DEADLINE_MS = 40_000; // 超时后跳过评分/面试建议
+const TOOL_LOOP_DEADLINE_MS = 45_000; // 超时后不再进新步骤(看门狗 55s 内必出主结果)
 
 export async function runToolAgentLoop(input: AgentRunInput, emit: Emit): Promise<void> {
   const t0 = Date.now();
@@ -114,33 +105,9 @@ export async function runToolAgentLoop(input: AgentRunInput, emit: Emit): Promis
       emit("stage", { stage: "revise", iteration: 0, status: "done" });
     }
 
-    // ── 收尾:面试准备 + 评分(固定编排,不交给模型决定——成本/延迟门禁) ──
-    let interviewPrep: AgentResultPayload["interviewPrep"];
-    let resumeScore: AgentResultPayload["resumeScore"];
-    if (elapsed() < FINALIZE_DEADLINE_MS) {
-      emit("stage", { stage: "finalize", iteration: 0, status: "start" });
-      const [prep, score] = await Promise.all([
-        callDeepSeek(buildInterviewPrepMessages(input.resume, input.jd, draft.polishedResume), {
-          temperature: 0.6,
-          maxTokens: 2048,
-          jsonMode: true,
-        })
-          .then((raw) => InterviewPrepSchema.safeParse(parseJSONLoose(raw)))
-          .then((r) => (r.success ? r.data : undefined))
-          .catch(() => undefined),
-        callDeepSeek(buildResumeScoreMessages(input.resume, input.jd, draft.polishedResume), {
-          temperature: 0.3,
-          maxTokens: 800,
-          jsonMode: true,
-        })
-          .then((raw) => ResumeScoreSchema.safeParse(parseJSONLoose(raw)))
-          .then((r) => (r.success ? r.data : undefined))
-          .catch(() => undefined),
-      ]);
-      interviewPrep = prep;
-      resumeScore = score;
-      emit("stage", { stage: "finalize", iteration: 0, status: "done" });
-    }
+    // ── 收尾已解耦(2026-09-16):面试准备+评分改由前端拿到主结果后
+    //    二次请求 /api/polish/finalize——不再挤占主请求的 60s 沙漏。
+    //    DeepSeek 高峰期主链吃满预算时,主结果仍能按时交付。
 
     emit("result", {
       polishedResume: draft.polishedResume,
@@ -149,8 +116,6 @@ export async function runToolAgentLoop(input: AgentRunInput, emit: Emit): Promis
       matchedKeywords: draft.matchedKeywords,
       missingKeywords: draft.missingKeywords,
       suggestions: draft.suggestions,
-      interviewPrep,
-      resumeScore,
       reviewReport: {
         iterations,
         passed,

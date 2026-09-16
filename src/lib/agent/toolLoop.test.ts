@@ -95,7 +95,11 @@ describe("runToolAgentLoop(模型驱动 tool-use agent)", () => {
     expect(r.reviewReport.iterations).toBe(1);
     expect(r.reviewReport.mode).toBe("tool-agent");
     expect(r.polishedResume).toContain("主导交易系统研发");
-    expect(r.resumeScore?.total).toBe(80);
+    // 收尾已解耦(2026-09-16):面试建议/评分由前端二次请求 /api/polish/finalize,主结果不带
+    expect(r.interviewPrep).toBeUndefined();
+    expect(r.resumeScore).toBeUndefined();
+    // 也不应再有 finalize stage(不再挤占主请求沙漏)
+    expect(events.some((e) => e.event === "stage" && e.data.stage === "finalize")).toBe(false);
     expect(events.some((e) => e.event === "error")).toBe(false);
   });
 
