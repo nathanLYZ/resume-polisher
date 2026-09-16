@@ -31,3 +31,6 @@ next-env.d.ts
 
 # 关键词库本地文件存储
 .data/
+
+# watch daemon 运行产物
+.data/watch/

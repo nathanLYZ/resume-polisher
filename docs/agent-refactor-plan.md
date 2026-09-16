@@ -329,3 +329,17 @@ for (let i = 0; i <= MAX_ITERATIONS; i++) {
 2. 工龄估算把教育背景年份算进去(2012 入学 → "14 年经验")——现剔除教育行日期
 
 测试 81/81(ATS 6 例 + 至今区间 2 例 + 区间外语义修正)。
+
+## 11. 实施追加:Phase 3 端到端自动化(2026-09-16)
+
+**架构决策(偏离原方案,记录理由):** 不引入 DB/Vercel Cron——Hobby 档 Cron 只有 daily 且 serverless 有时长上限(深度润色是 50s 级 LLM 循环),而油猴脚本本就要求本地应用常驻。定时任务放本地 daemon,零基础设施、零新依赖服务。
+
+**交付(`scripts/pipeline.ts` + `scripts/watch.ts`,`npm run watch`):**
+- 链路:RSS/JSON 职位源 → 去重(state.json,上限 5000)→ mustKeywords 粗筛(免费)→ fit 打分(零 LLM:内置词库双向命中 + 标题方向加权;泛职位不参与反向拉分)→ 高分岗位 → 落盘(records.json,200 条滚动)→ 飞书 webhook 通知
+- `--once` 单轮调试模式;配置模板自动生成并守门(占位简历拒绝运行)
+- 单源失败/详情抓取失败不阻断;详情抓取复用主应用 Readability + SSRF 守卫
+- **成本纪律:自动化层不烧 LLM 预算**——fit 与粗筛全为本地规则,深度润色留给用户在 UI 确认后手动触发(daemon 只负责把高 fit 岗位准备好并通知)
+
+**实测(Remotive 真实源):** 15 条岗位 → fit 排序落盘 → 二轮全部去重。fit 分布合理(Rails 岗 18 分 vs Java 简历,如实偏低)。
+
+**后续可选(未做):** UI 内嵌 watch 结果 Tab;高分岗位自动调 /api/polish/agent(需先解决"谁付 LLM 成本"的产品决策——建议保留人工确认门)。
