@@ -56,24 +56,34 @@ export async function runToolAgentLoop(input: AgentRunInput, emit: Emit): Promis
 
     emit("stage", { stage: "draft", iteration: 0, status: "start" });
 
-    // agent 调用失败(如 provider 异常)不终止:记下原因,走降级起草
+    // agent 调用失败(如 provider 异常)不终止:记下原因,走降级起草。
+    // 并行保底(2026-09-16 实测教训):DeepSeek 高峰期单步起草可达 30-50s,超过
+    // stopWhen 的步骤间检查粒度 → 主链必然超时。故同时启动一条单次小输出调用,
+    // 谁先成功用谁:tool agent 正常时它先回,保底调用被弃;agent 卡住时保底结果保证
+    // 用户在最迟 ~50s 拿到真实润色稿(而非看门狗的空降级)。
     let agentError: string | null = null;
-    try {
-      const result = await generateText({
-        model: deepseek("deepseek-chat"),
-        temperature: 0.7,
-        maxOutputTokens: 8192,
-        system: messages[0].content,
-        prompt: messages[1].content,
-        tools,
-        // 停止条件:已受理提交 / 步数耗尽 / 时间预算耗尽
-        stopWhen: ({ steps }) => state.last?.accepted === true || steps.length >= MAX_STEPS || elapsed() > TOOL_LOOP_DEADLINE_MS,
-      });
-      void result.text; // 模型的说明文字(不展示,预留调试)
-    } catch (e) {
+    const fallbackDraft = draftOnce(input, extras).catch(() => null); // 立即启动,不 await
+    const agentRun = generateText({
+      model: deepseek("deepseek-chat"),
+      temperature: 0.7,
+      maxOutputTokens: 8192,
+      system: messages[0].content,
+      prompt: messages[1].content,
+      tools,
+      // 停止条件:已受理提交 / 步数耗尽 / 时间预算耗尽
+      stopWhen: ({ steps }) => state.last?.accepted === true || steps.length >= MAX_STEPS || elapsed() > TOOL_LOOP_DEADLINE_MS,
+    }).catch((e: unknown) => {
       agentError = e instanceof Error ? e.message : String(e);
       emit("stage", { stage: "agent", detail: `agent 异常(${agentError.slice(0, 80)}),降级单次起草`, iteration: 0, status: "start" });
-    }
+      return null;
+    });
+
+    // 工具门禁在 agent 过程中就可能产出提交;等到 agent 结束或已受理
+    const raceTimeout = new Promise<"timeout">((r) => setTimeout(() => r("timeout"), TOOL_LOOP_DEADLINE_MS));
+    const winner = await Promise.race([agentRun.then((r) => (r === null ? "agent-error" : "agent-done")), raceTimeout]);
+    void winner;
+
+    emit("stage", { stage: "draft", iteration: 0, status: "done" });
 
     emit("stage", { stage: "draft", iteration: 0, status: "done" });
 
@@ -90,9 +100,9 @@ export async function runToolAgentLoop(input: AgentRunInput, emit: Emit): Promis
       passed = state.last.accepted;
       iterations = state.submissions;
     } else {
-      // 模型始终未提交(或 agent 异常)→ 降级:单次起草 + 体检(保底产出)
+      // 模型未提交 / agent 异常 / 预算耗尽 → 用并行保底调用(已在跑)的产出
       emit("stage", { stage: "revise", iteration: 0, status: "start", detail: agentError ? "agent 异常,降级单次起草" : "模型未提交终稿,降级单次起草" });
-      draft = await draftOnce(input, extras);
+      draft = (await fallbackDraft) ?? (await draftOnce(input, extras));
       finalIssues = runAllChecks({
         original: input.resume,
         jd: input.jd,

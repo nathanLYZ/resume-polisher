@@ -59,15 +59,18 @@ export async function POST(request: NextRequest) {
           closed = true; // 客户端已断开/流已被平台关闭:停止写入,不再让 enqueue 异常向上冒
         }
       };
-      // 看门狗:55s(平台 60s 限内)还没出 result 就强制收口——用户总拿得到结果
+      // 看门狗:55s(平台 60s 限内)还没出 result 就强制收口。
+      // 注意:toolLoop 已内置并行保底(单次小输出起草),正常情况下主结果
+      // 最迟 ~50s 必达;触发本看门狗意味着连保底都失败(DeepSeek 全面卡死),
+      // 如实告知用户。空 polishedResume 由前端识别并转成错误提示,不会渲染成"成功"。
       let settled = false;
       const watchdog = setTimeout(() => {
         if (settled) return;
-        console.error("[agent] watchdog: 55s 未产出结果,强制降级收口");
+        console.error("[agent] watchdog: 55s 未产出结果(含保底链),强制降级收口");
         emit("result", {
           polishedResume: "",
           reviewReport: { iterations: 0, passed: false, issues: [], elapsedMs: 55_000, degraded: true },
-          suggestions: ["本次深度润色超时(55s)。请重试,或关闭深度模式用快速模式。"],
+          suggestions: ["本次深度润色超时(55s)——AI 服务响应过慢。请稍后重试,或暂时关闭深度模式用快速模式。"],
         });
       }, 55_000);
 
