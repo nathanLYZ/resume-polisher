@@ -81,16 +81,20 @@ export async function POST(request: NextRequest) {
 
     const messages = buildPolishPrompt(resume, jd, templateId || "professional", formatId || "classic");
 
-    // 输出结构大（润色全文+修改清单+评分+面试准备），4096 容易截断导致 JSON 解析失败；
-    // 开 JSON 模式 + 8192 上限 + 失败自动降级重试一次（更低温、要求压缩输出）
+    // 旧路径已知缺陷:一次要模型输出「简历全文+changes+关键词+面试准备+评分」的巨型 JSON,
+    // jsonMode 下 8192 token 仍会被长简历撑爆 → 截断 → 解析必败 → 重试再截断(死循环)。
+    // 主修复在 agent 路径(拆三个小调用);这里做两件事:
+    //   1) 面试准备/评分不再要求模型本次输出(截断的主因),返回降级空值,前端 Tab 自动隐藏
+    //   2) 报错带真实原因(截断 vs 解析失败),不再一律"无法解析 JSON"
     let parsed: Partial<PolishResult> | null = null;
     let lastError: unknown = null;
+    let truncated = false;
     for (let attempt = 0; attempt < 2 && !parsed; attempt++) {
       const attemptMessages = attempt === 0
         ? messages
         : [...messages, {
             role: "user" as const,
-            content: "上一次输出未能解析为 JSON。请重新输出完整结果：只输出一个 JSON 对象；changes 最多 8 条、suggestions 最多 5 条、starStories 最多 3 条，其余字段保持精简，确保在长度限制内完整输出。",
+            content: "上一次输出未能解析为 JSON。请重新输出完整结果：只输出一个 JSON 对象；polishedResume 完整保留，changes 最多 8 条、suggestions 最多 5 条，其余字段保持精简，确保在长度限制内完整输出。",
           }];
       try {
         const rawResponse = await callDeepSeek(attemptMessages, {
@@ -101,10 +105,15 @@ export async function POST(request: NextRequest) {
         parsed = extractJSON(rawResponse) as Partial<PolishResult>;
       } catch (e) {
         lastError = e;
+        truncated = e instanceof Error && e.message.includes("截断");
       }
     }
     if (!parsed) {
-      throw lastError instanceof Error ? lastError : new Error("无法从 AI 返回内容中解析 JSON");
+      throw new Error(
+        truncated
+          ? "AI 输出超长被截断(简历过长,建议用深度模式,或精简简历后重试)"
+          : `无法从 AI 返回内容中解析 JSON: ${lastError instanceof Error ? lastError.message : "两次尝试均失败"}`
+      );
     }
 
     const result: PolishResult = {
