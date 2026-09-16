@@ -110,6 +110,17 @@ BOSS直聘职位详情页                简历润色助手 (localhost:3000)
    - **JD关键词分析**：匹配情况 + 缺失关键词 + 优化建议
 5. 点击 **复制** 或 **导出MD** 保存结果
 
+## 🔭 岗位监控(watch daemon,Phase 3)
+
+定时抓取职位源 → 关键词粗筛 → fit 打分 → 高分岗位落盘 + 飞书通知。本地运行,零 LLM 成本(粗筛与打分全为规则):
+
+```bash
+npm run watch          # 每 30 分钟一轮(WATCH_INTERVAL_MIN 可调)
+npm run watch -- --once  # 单轮调试
+```
+
+首次运行自动生成 `.data/watch/watch-config.json` 模板:填入你的简历文本、职位源(RSS/JSON)、fit 阈值、可选的飞书群机器人 webhook。产物在 `.data/watch/records.json`(高分岗位含 fit 理由),去重状态在 `state.json`。
+
 ## ☁ 部署到 Vercel
 
 1. 将代码推送到 GitHub
