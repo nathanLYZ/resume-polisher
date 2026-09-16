@@ -266,7 +266,12 @@ export default function Home() {
             else { setAgentStage("审查通过,生成评分与面试建议…"); }
           } else if (type === "result") {
             finished = true;
-            applyResult(payload as unknown as DeepPolishResult);
+            const r = payload as unknown as DeepPolishResult;
+            if (!r.polishedResume) {
+              // 看门狗降级/空产出:不渲染"成功",把降级提示作为错误展示
+              throw new Error(r.suggestions?.[0] || "深度润色超时,请重试或切换快速模式");
+            }
+            applyResult(r);
           } else if (type === "error") {
             throw new Error(payload.message || "深度润色失败");
           }
