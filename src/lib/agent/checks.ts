@@ -178,18 +178,26 @@ interface DatePoint {
 }
 
 const DATE_RE = /((?:19|20)\d{2})\s*[.\-/年]\s*(\d{1,2})?\s*[.\-/月]?/g;
-const RANGE_SEP = /\s*(?:[-–—~]|至|到)\s*/;
+const RANGE_SEP = /\s*(?:[-–—~]|至今|当前|现在|present|至|到)\s*/i;
 
-function extractDates(text: string): { points: DatePoint[]; ranges: [DatePoint, DatePoint][] } {
+export function extractDates(text: string): { points: DatePoint[]; ranges: [DatePoint, DatePoint][] } {
   const points: DatePoint[] = [];
-  // 先抽区间("2020.03-2022.05"),避免区间端点被重复当散点
+  // 先抽区间("2020.03-2022.05" / "2020.03-至今"),避免区间端点被重复当散点;
+  // "至今"端点用当前时间补齐,使"2023.07-至今"也能算出经历时长
   const rangeRe = new RegExp(
     `((?:19|20)\\d{2})\\s*[.\\-/年]\\s*(\\d{1,2})?\\s*[.\\-/月]?${RANGE_SEP.source}((?:19|20)\\d{2})\\s*[.\\-/年]\\s*(\\d{1,2})?\\s*[.\\-/月]?`,
-    "g"
+    "gi"
   );
+  const rangeToNowRe = new RegExp(
+    `((?:19|20)\\d{2})\\s*[.\\-/年]\\s*(\\d{1,2})?\\s*[.\\-/月]?\\s*(?:至今|当前|现在|present)`,
+    "gi"
+  );
+  const now = new Date();
+  const nowPoint: DatePoint = { year: now.getFullYear(), month: now.getMonth() + 1 };
   const ranges: [DatePoint, DatePoint][] = [];
   const consumed = new Set<number>();
   for (const m of text.matchAll(rangeRe)) {
+    // "2023.07-至今"的右侧不是年份,不会落到这条 path
     const i = m.index ?? 0;
     consumed.add(i);
     for (let k = i; k < i + m[0].length; k++) consumed.add(k);
@@ -197,6 +205,14 @@ function extractDates(text: string): { points: DatePoint[]; ranges: [DatePoint, 
     const end = { year: +m[3], month: m[4] ? clampMonth(+m[4]) : undefined };
     ranges.push([start, end]);
     points.push(start, end);
+  }
+  for (const m of text.matchAll(rangeToNowRe)) {
+    const i = m.index ?? 0;
+    consumed.add(i);
+    for (let k = i; k < i + m[0].length; k++) consumed.add(k);
+    const start = { year: +m[1], month: m[2] ? clampMonth(+m[2]) : undefined };
+    ranges.push([start, nowPoint]);
+    points.push(start, nowPoint);
   }
   for (const m of text.matchAll(DATE_RE)) {
     const i = m.index ?? 0;
@@ -278,7 +294,7 @@ const KW_VARIANTS: Record<string, string[]> = {
   aigc: ["生成式ai", "生成式人工智能"],
 };
 
-function keywordPresent(kw: string, text: string): boolean {
+export function keywordPresent(kw: string, text: string): boolean {
   const lower = text.toLowerCase();
   if (lower.includes(kw.toLowerCase())) return true;
   const variants = KW_VARIANTS[kw.toLowerCase()];
@@ -461,33 +477,8 @@ export function checkAgeTenure(original: string, polished: string): Issue[] {
 
 const LATIN_TOKEN_RE = /[A-Za-z][A-Za-z0-9+#./-]*/g;
 
-/** 中文简历中的约定俗成缩写与技术名词(小写) */
-const TECH_TERMS = new Set(
-  [
-    // 编程语言/技术栈
-    "java", "python", "javascript", "typescript", "go", "golang", "rust", "php", "c++", "c#", "c",
-    "sql", "nosql", "mysql", "postgresql", "oracle", "mongodb", "redis", "elasticsearch", "es",
-    "html", "css", "scss", "vue", "react", "angular", "next.js", "nuxt", "node", "nodejs", "deno",
-    "spring", "springboot", "springboot", "django", "flask", "fastapi", "gin", "grpc", "graphql",
-    "k8s", "kubernetes", "docker", "containerd", "jenkins", "gitlab", "github", "git", "svn",
-    "linux", "unix", "shell", "bash", "python3", "scala", "kotlin", "swift", "objective-c",
-    "hadoop", "spark", "flink", "hive", "hbase", "kafka", "rabbitmq", "rocketmq", "zookeeper",
-    "aws", "azure", "gcp", "aliyun", "oss", "ecs", "cdn", "dns", "vpc", "s3", "ec2",
-    "api", "apis", "rest", "restful", "http", "https", "tcp", "udp", "ip", "websocket", "oauth",
-    "ci", "cd", "cicd", "devops", "sre", "it", "saas", "paas", "iaas", "b/s", "c/s",
-    "ai", "ml", "dl", "nlp", "cv", "llm", "gpt", "aigc", "rag", "agent", "prompt",
-    "excel", "word", "powerpoint", "ppt", "office", "visio", "jira", "confluence", "figma",
-    "autotest", "pytest", "junit", "selenium", "jmeter", "postman", "charles", "fiddler",
-    "4g", "5g", "lte", "nb-iot", "ims", "sip", "voip", "pbx",
-    "ios", "android", "harmonyos", "windows", "macos", "centos", "ubuntu",
-    "es6", "express", "koa", "webpack", "vite", "axios", "node.js", "vue.js", "react.js", "nest.js",
-    // 商务惯用缩写
-    "hr", "jd", "cv", "ceo", "cto", "coo", "vp", "okr", "kpi", "roi", "bp", "pr", "gr",
-    "app", "web", "h5", "ui", "ue", "ux", "logo", "bug", "demo", "case", "review",
-    "dau", "mau", "pv", "uv", "gmv", "sku", "crm", "erp", "oa", "bi", "etl", "ab",
-    "b端", "c端", "a/b", "iso", "sap", "oracle",
-  ]
-);
+export { TECH_TERMS } from "../techTerms";
+import { TECH_TERMS } from "../techTerms";
 
 function extractLatinTokens(text: string): string[] {
   return [...text.matchAll(LATIN_TOKEN_RE)].map((m) => m[0]);
