@@ -14,6 +14,7 @@ import {
   checkPageEstimate,
   checkDateFormatConsistency,
   checkArabicNumerals,
+  extractDates,
   type Issue,
 } from "./checks";
 
@@ -90,7 +91,23 @@ describe("checkTimeline", () => {
     const polished = "2018.06-2020.03 A公司\n2020.04-至今 B公司\n2023.05 主导 XX 项目";
     const issues = checkTimeline(original, polished);
     expect(issues).toHaveLength(1);
+    expect(issues[0].severity).toBe("warning"); // "至今"端点补齐后,2023.05 落在 B公司区间内 → 区间推断 warning
+  });
+
+  it("新增真正区间外月份 → blocker", () => {
+    const orig = "2018.06-2020.03 A公司\n2020.04-2022.05 B公司"; // 自带 original:区间到 2022.05 封口
+    const polished = "2018.06-2020.03 A公司\n2020.04-2022.05 B公司\n2023.05 主导 XX 项目";
+    const issues = checkTimeline(orig, polished);
+    expect(issues).toHaveLength(1);
     expect(issues[0].severity).toBe("blocker");
+  });
+
+  it("「至今」区间端点被正确解析(修复:2023.07-至今可抽出时间线)", () => {
+    const orig = "2020.03-至今 A公司 负责交易系统";
+    const { points } = extractDates(orig);
+    expect(points.length).toBe(2); // 起点 + 当前时间端点
+    expect(points[0].year).toBe(2020);
+    expect(points[1].year).toBe(new Date().getFullYear());
   });
 
   it("新增区间内月份(区间推断)→ warning", () => {

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Sparkles, Download, Clipboard, Check, FileDown, FileType2, Printer, Eye, FileText,
-  GitCompare, ListChecks, ShieldCheck, Tags, MessagesSquare, BarChart3, BookOpen, History,
+  GitCompare, ListChecks, ShieldCheck, Tags, MessagesSquare, BarChart3, BookOpen, History, ScanSearch,
 } from "lucide-react";
 import DiffView from "@/components/DiffView";
 import ResumePreview from "@/components/ResumePreview";
@@ -11,6 +11,7 @@ import ResumeTemplateForm from "@/components/ResumeTemplateForm";
 import HealthReportView from "@/components/HealthReportView";
 import AgentProgress from "@/components/AgentProgress";
 import ResumePrintView from "@/components/ResumePrintView";
+import AtsScreenView, { type AtsScreenResult } from "@/components/AtsScreenView";
 import { TEMPLATES, type TemplateId } from "@/lib/templates";
 import { FORMATS, type FormatId } from "@/lib/resumeFormats";
 import { THEME_LIST, type ThemeId } from "@/lib/resumeThemes";
@@ -35,7 +36,7 @@ interface PolishResult {
 }
 interface ImportedJD { hasNew: boolean; jobTitle?: string; company?: string; salary?: string; city?: string; jdText?: string; jobUrl?: string; }
 interface KeywordEntry { keyword: string; count: number; firstSeen: number; lastSeen: number; jobTitles: string[]; }
-type Tab = "preview" | "polished" | "diff" | "changes" | "health" | "analysis" | "interview" | "score" | "keywordbank" | "history";
+type Tab = "preview" | "polished" | "diff" | "changes" | "health" | "ats" | "analysis" | "interview" | "score" | "keywordbank" | "history";
 interface HealthIssue { check: string; severity: "blocker" | "warning"; location: string; evidence: string; fixHint: string; }
 interface HealthReport { issues: HealthIssue[]; blockerCount: number; warningCount: number; passed: boolean; }
 const STAGE_LABELS: Record<string, string> = {
@@ -64,6 +65,9 @@ export default function Home() {
   const [polishStep, setPolishStep] = useState(0); // 0=空闲 1=分析JD 2=润色简历 3=生成评分/面试建议
   const [health, setHealth] = useState<HealthReport | null>(null);
   const [healthLoading, setHealthLoading] = useState(false);
+  const [ats, setAts] = useState<{ original: AtsScreenResult | null; polished: AtsScreenResult | null } | null>(null);
+  const [atsLoading, setAtsLoading] = useState(false);
+  const [atsError, setAtsError] = useState("");
   const [deepMode, setDeepMode] = useState(true);
   const [agentStage, setAgentStage] = useState("");
   const [agentStep, setAgentStep] = useState(0);
@@ -130,7 +134,7 @@ export default function Home() {
 
   function handleClearAll() {
     if (!confirm("清空当前输入的简历和JD？")) return;
-    setResume(""); setJd(""); setError(""); setResult(null); setHealth(null);
+    setResume(""); setJd(""); setError(""); setResult(null); setHealth(null); setAts(null);
   }
 
   /** 体检:对润色稿跑确定性检查(纯规则,零 LLM 调用),只报告不闭环 */
@@ -147,9 +151,25 @@ export default function Home() {
     finally { setHealthLoading(false); }
   }
 
+  /** ATS 筛选模拟:原文 vs 润色稿双份(确定性规则,零 LLM 调用) */
+  async function runAtsScreen(original: string, jdText: string, polished: string, keywords: string[]) {
+    setAtsLoading(true); setAtsError("");
+    try {
+      const res = await fetch("/api/ats/screen", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ original, jd: jdText, polished, jdKeywords: keywords }),
+      });
+      const data = await res.json() as { original?: AtsScreenResult; polished?: AtsScreenResult; error?: string };
+      if (!res.ok || !data.original) { setAtsError(data.error || "筛选失败"); setAts(null); }
+      else { setAts({ original: data.original, polished: data.polished ?? null }); }
+    } catch { setAtsError("网络错误"); }
+    finally { setAtsLoading(false); }
+  }
+
   /** 统一收尾:展示结果、水合体检报告(深度模式直接用循环产出,简单模式补一次 /api/checks)、词库与历史 */
   function applyResult(data: DeepPolishResult) {
     setResult(data);
+    runAtsScreen(resume, jd, data.polishedResume, data.jdKeywords || []);
     const report = data.reviewReport;
     if (report) {
       const blockerCount = report.issues.filter((i) => i.severity === "blocker").length;
@@ -177,7 +197,7 @@ export default function Home() {
 
   function beginRun(): boolean {
     if (!resume.trim() || !jd.trim()) { setError("请填写简历和JD"); return false; }
-    setLoading(true); setError(""); setResult(null); setActiveTab("preview"); setHealth(null); setAgentStage("");
+    setLoading(true); setError(""); setResult(null); setActiveTab("preview"); setHealth(null); setAts(null); setAgentStage("");
     return true;
   }
 
@@ -267,6 +287,7 @@ export default function Home() {
 
   function restoreHistory(item: HistoryItem) {
     setHealth(null);
+    setAts(null);
     setResume(item.originalResume);
     setResult({
       polishedResume: item.polishedResume,
@@ -509,6 +530,7 @@ export default function Home() {
                     <TabButton active={activeTab === "diff"} onClick={() => setActiveTab("diff")}><GitCompare className="h-3.5 w-3.5" />Diff</TabButton>
                     {result.changes.length > 0 && <TabButton active={activeTab === "changes"} onClick={() => setActiveTab("changes")}><ListChecks className="h-3.5 w-3.5" />修改({result.changes.length})</TabButton>}
                     <TabButton active={activeTab === "health"} onClick={() => setActiveTab("health")}><ShieldCheck className="h-3.5 w-3.5" />体检{health && !healthLoading && (health.blockerCount > 0 ? `(${health.blockerCount})` : <Check className="h-3 w-3 text-green-500" />)}</TabButton>
+                    <TabButton active={activeTab === "ats"} onClick={() => setActiveTab("ats")}><ScanSearch className="h-3.5 w-3.5" />ATS</TabButton>
                     <TabButton active={activeTab === "analysis"} onClick={() => setActiveTab("analysis")}><Tags className="h-3.5 w-3.5" />关键词</TabButton>
                     {hasInterviewPrep && <TabButton active={activeTab === "interview"} onClick={() => setActiveTab("interview")}><MessagesSquare className="h-3.5 w-3.5" />面试</TabButton>}
                     {hasScore && <TabButton active={activeTab === "score"} onClick={() => setActiveTab("score")}><BarChart3 className="h-3.5 w-3.5" />评分</TabButton>}
@@ -528,6 +550,9 @@ export default function Home() {
                     {activeTab === "diff" && (<div><div className="flex items-center gap-4 mb-3 text-xs text-slate-500"><span className="flex items-center gap-1"><span className="w-3 h-3 inline-block bg-green-200 rounded"></span> 新增</span><span className="flex items-center gap-1"><span className="w-3 h-3 inline-block bg-red-200 rounded"></span> 删除</span></div><DiffView original={resume} modified={result.polishedResume} /></div>)}
                     {activeTab === "changes" && (<div className="space-y-3">{result.changes.map((change, idx) => (<div key={idx} className="border border-slate-200 rounded-lg p-3"><div className="flex items-start gap-2"><span className="flex-shrink-0 w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center mt-0.5">{idx + 1}</span><div className="flex-1 space-y-2"><div><span className="text-xs text-red-500 font-medium">原文：</span><span className="text-sm text-slate-600 line-through">{change.original}</span></div><div><span className="text-xs text-green-600 font-medium">修改：</span><span className="text-sm text-slate-800 font-medium">{change.modified}</span></div><div className="flex items-start gap-1.5"><span className="text-xs text-brand-600 font-medium mt-0.5">💡</span><span className="text-xs text-slate-500">{change.reason}</span></div></div></div></div>))}</div>)}
                     <HealthReportView health={health} loading={healthLoading} estPages={estimatePages(result.polishedResume)} />
+                    {activeTab === "ats" && (
+                      <AtsScreenView loading={atsLoading} error={atsError} original={ats?.original ?? null} polished={ats?.polished ?? null} />
+                    )}
                     {activeTab === "analysis" && (<div className="space-y-5"><div><h3 className="text-sm font-semibold text-slate-700 mb-2">✅ 已匹配<span className="ml-2 text-xs font-normal text-slate-400">({result.matchedKeywords.length})</span></h3><div className="flex flex-wrap gap-2">{result.matchedKeywords.length > 0 ? result.matchedKeywords.map((kw, idx) => <span key={idx} className="px-3 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">{kw}</span>) : <span className="text-xs text-slate-400">暂无</span>}</div></div><div><h3 className="text-sm font-semibold text-slate-700 mb-2">❌ 缺失<span className="ml-2 text-xs font-normal text-slate-400">({result.missingKeywords.length})</span></h3><div className="flex flex-wrap gap-2">{result.missingKeywords.length > 0 ? result.missingKeywords.map((kw, idx) => <span key={idx} className="px-3 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-full">{kw}</span>) : <span className="text-xs text-green-600">全覆盖 🎉</span>}</div></div><div><h3 className="text-sm font-semibold text-slate-700 mb-2">📋 全览<span className="ml-2 text-xs font-normal text-slate-400">({result.jdKeywords.length})</span></h3><div className="flex flex-wrap gap-2">{result.jdKeywords.map((kw, idx) => <span key={idx} className="px-3 py-1 text-xs font-medium bg-slate-100 text-slate-700 rounded-full">{kw}</span>)}</div></div>{result.suggestions.length > 0 && (<div><h3 className="text-sm font-semibold text-slate-700 mb-2">💡 建议</h3><ul className="space-y-2">{result.suggestions.map((sug, idx) => <li key={idx} className="flex items-start gap-2 text-sm text-slate-600 bg-amber-50 rounded-lg p-2.5"><span className="text-amber-500 mt-0.5">▸</span><span>{sug}</span></li>)}</ul></div>)}</div>)}
                     {activeTab === "interview" && hasInterviewPrep && result.interviewPrep && (
                       <div className="space-y-5">
