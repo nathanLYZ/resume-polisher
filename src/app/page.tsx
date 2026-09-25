@@ -70,6 +70,10 @@ export default function Home() {
   const [atsError, setAtsError] = useState("");
   const [deepMode, setDeepMode] = useState(true);
   const [agentStage, setAgentStage] = useState("");
+  const [dragging, setDragging] = useState(false);      // 简历文件拖拽悬停中
+  const [extracting, setExtracting] = useState(false);  // 文件解析中
+  const [extractMsg, setExtractMsg] = useState("");     // 解析成功提示
+  const [extractError, setExtractError] = useState(""); // 解析失败提示
   const [agentStep, setAgentStep] = useState(0);
   const [jdUrl, setJdUrl] = useState("");
   const [jdUrlLoading, setJdUrlLoading] = useState(false);
@@ -308,6 +312,41 @@ export default function Home() {
     }
   }
 
+  /** 拖入 / 选择 / 粘贴的文件 → 解析成文本填进简历框 */
+  async function extractFile(file: File) {
+    setExtractMsg(""); setExtractError("");
+    if (file.size > 10 * 1024 * 1024) {
+      setExtractError(`文件 ${(file.size / 1024 / 1024).toFixed(1)}MB 超过 10MB，请压缩后再传`);
+      return;
+    }
+    setExtracting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/extract-resume", { method: "POST", body: fd });
+      const data = await res.json() as { text?: string; chars?: number; pages?: number; source?: string; warning?: string; error?: string };
+      if (!res.ok || data.error) { setExtractError(data.error || "解析失败，请直接把简历文字粘贴进来"); return; }
+      setResume(data.text || "");
+      setExtractMsg(
+        `✅ 已从「${data.source}」提取 ${data.chars} 字${data.pages ? `（${data.pages} 页）` : ""}` +
+        `${data.warning ? ` · ⚠ ${data.warning}` : " · 建议通读一遍，PDF 提取偶尔会掉行"}`
+      );
+    } catch (e) {
+      setExtractError(`上传失败：${e instanceof Error ? e.message : "网络错误"}`);
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    if (loading || extracting) return;
+    const f = e.dataTransfer.files?.[0];
+    if (f) extractFile(f);
+    else setExtractError("没识别到文件，请拖入 PDF / Word / txt 文件");
+  }
+
   async function handlePolish() {
     if (!beginRun()) return;
     if (deepMode) await runDeep(); else await runSimple();
@@ -480,13 +519,47 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 简历输入 */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+            {/* 简历输入（可拖入文件） */}
+            <div
+              className={`relative bg-white rounded-xl border shadow-sm transition ${dragging ? "border-brand-400 ring-2 ring-brand-100 bg-brand-50/40" : "border-slate-200"}`}
+              onDragOver={(e) => { e.preventDefault(); if (!loading && !extracting) setDragging(true); }}
+              onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
+              onDrop={handleDrop}
+            >
               <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-brand-500"></span><h2 className="text-sm font-semibold text-slate-700">我的简历</h2></div>
-                <span className="text-xs text-slate-400">{resume.length} 字</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400">{resume.length} 字</span>
+                  <label className={`px-2 py-1 text-xs font-medium rounded-md border transition cursor-pointer ${extracting ? "text-slate-400 border-slate-200 cursor-wait" : "text-brand-600 border-brand-200 hover:bg-brand-50"}`}>
+                    {extracting ? "⏳ 解析中…" : "📎 上传文件"}
+                    <input
+                      type="file"
+                      accept=".pdf,.docx,.txt,.md"
+                      className="hidden"
+                      disabled={loading || extracting}
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) extractFile(f); e.target.value = ""; }}
+                    />
+                  </label>
+                </div>
               </div>
-              <textarea value={resume} onChange={(e) => setResume(e.target.value)} placeholder="粘贴简历、用模版填写、或点右上角「填入示例」体验…" className="w-full h-44 p-4 text-sm text-slate-800 resize-y focus:outline-none rounded-xl placeholder:text-slate-400" disabled={loading} />
+              <textarea
+                value={resume}
+                onChange={(e) => setResume(e.target.value)}
+                onPaste={(e) => { const f = e.clipboardData?.files?.[0]; if (f) { e.preventDefault(); extractFile(f); } }}
+                placeholder="把简历文件拖进来（PDF / Word / txt / md），或直接粘贴文字、用模版填写…"
+                className="w-full h-44 p-4 text-sm text-slate-800 resize-y focus:outline-none rounded-xl placeholder:text-slate-400"
+                disabled={loading}
+              />
+              {(extractMsg || extractError) && (
+                <div className={`px-4 pb-3 -mt-2 text-[11px] leading-relaxed ${extractError ? "text-red-600" : "text-emerald-700"}`}>
+                  {extractError || extractMsg}
+                </div>
+              )}
+              {dragging && (
+                <div className="absolute inset-0 rounded-xl bg-white/70 border-2 border-dashed border-brand-400 flex items-center justify-center pointer-events-none">
+                  <span className="text-sm font-medium text-brand-700">松手即导入简历文件（PDF / Word / txt）</span>
+                </div>
+              )}
             </div>
 
             {/* JD 输入 */}
