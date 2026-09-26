@@ -41,10 +41,15 @@ export async function POST(request: NextRequest) {
 
   try {
     if (ext === "pdf" || file.type === "application/pdf") {
-      const pdfParse = (await import("pdf-parse")) as unknown as {
-        PDFParse: new (o: { data: Uint8Array }) => { getText(): Promise<{ text?: string; total?: number }>; destroy?: () => Promise<void> };
+      // 先引入 worker：把 @napi-rs/canvas 的 DOMMatrix 等 polyfill 到 globalThis，
+      // 否则含图案/特殊字体的 PDF 解析时会抛 "DOMMatrix is not defined"
+      const worker = (await import("pdf-parse/worker")) as unknown as {
+        CanvasFactory: new () => unknown;
       };
-      const parser = new pdfParse.PDFParse({ data: new Uint8Array(buf) });
+      const pdfParse = (await import("pdf-parse")) as unknown as {
+        PDFParse: new (o: { data: Uint8Array; CanvasFactory?: unknown }) => { getText(): Promise<{ text?: string; total?: number }>; destroy?: () => Promise<void> };
+      };
+      const parser = new pdfParse.PDFParse({ data: new Uint8Array(buf), CanvasFactory: worker.CanvasFactory });
       const r = await parser.getText();
       text = r.text || "";
       pages = r.total;
