@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         BOSS直聘 JD 发送到简历润色助手 v3.4
+// @name         BOSS直聘 JD 发送到简历润色助手 v3.5
 // @namespace    https://resume.daybydayai.xyz
-// @version      3.4
+// @version      3.5
 // @description  在BOSS直聘职位详情页一键将JD发送到简历润色助手
 // @author       Resume Polisher
 // @match        https://www.zhipin.com/*
@@ -9,6 +9,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @grant        GM_registerMenuCommand
+// @grant        GM_openInTab
 // @connect      resume.daybydayai.xyz
 // @connect      localhost
 // @connect      127.0.0.1
@@ -44,6 +45,7 @@
     var t = document.getElementById("rp-toast");
     if (!t) return;
     t.textContent = msg;
+    t.style.whiteSpace = "pre-line";
     t.classList.add("show");
     setTimeout(function () { t.classList.remove("show"); }, duration || 3000);
   }
@@ -188,6 +190,15 @@
     return result;
   }
 
+  // 打开简历助手；autostart=true 时页面会自动开始润色，不用再点一次
+  function openApp(autostart) {
+    var url = APP_BASE_URL + (autostart ? "/?autostart=1" : "/");
+    try {
+      if (typeof GM_openInTab === "function") { GM_openInTab(url, { active: true }); return; }
+    } catch (e) { /* 回退 window.open */ }
+    window.open(url, "_blank");
+  }
+
   function sendJD(btn) {
     var data = extractJD();
     if (!data.jdText || data.jdText.length < 20) { showToast("未能提取到JD内容"); return; }
@@ -197,12 +208,17 @@
       onload: function (r) {
         btn.classList.remove("sending");
         if (r.status === 200) {
-          btn.classList.add("success"); btn.innerHTML = "✓ 已发送！";
-          showToast("已发送：" + data.jobTitle + " @ " + data.company);
-          setTimeout(function () { btn.classList.remove("success"); btn.innerHTML = "✨ 发送到简历润色助手"; }, 3000);
+          btn.classList.add("success"); btn.setAttribute("data-open-mode", "1");
+          btn.innerHTML = "👉 点此打开并开始润色";
+          showToast("已发送：" + data.jobTitle + " @ " + data.company + "\n（8 秒内再点一次按钮，直接打开并开始润色）", 6000);
+          setTimeout(function () {
+            btn.removeAttribute("data-open-mode");
+            btn.classList.remove("success");
+            btn.innerHTML = "✨ 发送到简历润色助手";
+          }, 8000);
         } else { btn.classList.add("error"); btn.innerHTML = "发送失败"; setTimeout(function () { btn.classList.remove("error"); btn.innerHTML = "✨ 发送到简历润色助手"; }, 3000); }
       },
-      onerror: function () { btn.classList.remove("sending"); btn.classList.add("error"); btn.innerHTML = "连接失败"; showToast("无法连接localhost:3000"); setTimeout(function () { btn.classList.remove("error"); btn.innerHTML = "✨ 发送到简历润色助手"; }, 4000); },
+      onerror: function () { btn.classList.remove("sending"); btn.classList.add("error"); btn.innerHTML = "连接失败"; showToast("无法连接 " + APP_BASE_URL); setTimeout(function () { btn.classList.remove("error"); btn.innerHTML = "✨ 发送到简历润色助手"; }, 4000); },
     });
   }
 
@@ -210,7 +226,17 @@
     if (document.getElementById("rp-float-btn")) return;
     if (!document.getElementById("rp-toast")) { var toast = document.createElement("div"); toast.id = "rp-toast"; document.body.appendChild(toast); }
     var btn = document.createElement("button"); btn.id = "rp-float-btn"; btn.innerHTML = "✨ 发送到简历润色助手";
-    document.body.appendChild(btn); btn.addEventListener("click", function () { sendJD(btn); });
+    document.body.appendChild(btn);
+    btn.addEventListener("click", function () {
+      if (btn.getAttribute("data-open-mode") === "1") {   // 刚发送成功 → 一键打开并开始润色
+        btn.removeAttribute("data-open-mode");
+        btn.classList.remove("success");
+        btn.innerHTML = "✨ 发送到简历润色助手";
+        openApp(true);
+        return;
+      }
+      sendJD(btn);
+    });
   }
 
   // 菜单
@@ -225,6 +251,8 @@
       onerror: function () { alert("❌ 无法连接localhost:3000"); },
     });
   });
+
+  GM_registerMenuCommand("🚀 打开简历助手并开始润色", function () { openApp(true); });
 
   // 启动
   function init() { if (!document.body) return; injectButton(); }

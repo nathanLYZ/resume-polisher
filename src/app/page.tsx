@@ -84,6 +84,8 @@ export default function Home() {
   } | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollCountRef = useRef(0);
+  const autoStartRef = useRef(false);   // URL 带 ?autostart=1（油猴脚本「打开并开始润色」）
+  const autoStartedRef = useRef(false); // 自动开跑只触发一次
 
   useEffect(() => {
     pollTimerRef.current = setInterval(async () => {
@@ -106,12 +108,25 @@ export default function Home() {
     if (draft) {
       if (draft.resume) setResume(draft.resume);
       if (draft.jd) setJd(draft.jd);
-      if (draft.templateId) setSelectedTemplate(draft.templateId as TemplateId);
-      if (draft.formatId) setSelectedFormat(draft.formatId as FormatId);
-      if (draft.themeId) setSelectedTheme(draft.themeId as ThemeId);
+      // 旧版本存下的 id 可能在新版本里已不存在（如 formatId="expert_dossier"）→ 校验后再用，否则保持默认
+      if (draft.templateId && TEMPLATES[draft.templateId as TemplateId]) setSelectedTemplate(draft.templateId as TemplateId);
+      if (draft.formatId && FORMATS[draft.formatId as FormatId]) setSelectedFormat(draft.formatId as FormatId);
+      if (draft.themeId && THEME_LIST.some((t) => t.id === draft.themeId)) setSelectedTheme(draft.themeId as ThemeId);
     }
+    try {
+      if (new URLSearchParams(window.location.search).get("autostart") === "1") autoStartRef.current = true;
+    } catch { /* ignore */ }
     return () => { if (pollTimerRef.current) clearInterval(pollTimerRef.current); };
   }, []);
+
+  // 油猴脚本带 ?autostart=1 打开（或本页已就绪）时：JD + 简历都在就自动开跑一次
+  useEffect(() => {
+    if (!autoStartRef.current || autoStartedRef.current || loading) return;
+    if (jd.trim().length < 20 || resume.trim().length < 50) return;
+    autoStartedRef.current = true;
+    handlePolish();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jd, resume, loading]);
 
   async function loadKeywordBank(sort: "count" | "recent") {
     try {
@@ -207,8 +222,8 @@ export default function Home() {
     if (data.jdKeywords && data.jdKeywords.length > 0) submitKeywords(data.jdKeywords, importedInfo?.jobTitle || "");
     // 保存到历史记录
     addHistory({
-      templateName: TEMPLATES[selectedTemplate].name,
-      formatName: FORMATS[selectedFormat].name,
+      templateName: TEMPLATES[selectedTemplate]?.name || String(selectedTemplate),
+      formatName: FORMATS[selectedFormat]?.name || String(selectedFormat),
       jobTitle: importedInfo?.jobTitle || "",
       company: importedInfo?.company || "",
       originalResume: resume,
