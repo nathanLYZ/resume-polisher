@@ -14,14 +14,14 @@
  *
  * 日期/数字格式一致性由检查器(⑩⑪)负责提示,版式不强制改写内容。
  */
-import { parseResume, type ParsedSection } from "./ResumePreview";
+import { parseResume, parseEntryLine, parseSubHeader, toContactLine, type ParsedSection } from "./ResumePreview";
 
 const FONT_STACK =
   '"Noto Sans SC", "Source Han Sans SC", "Source Han Sans CN", "PingFang SC", "Microsoft YaHei", sans-serif';
 
 const C = {
   text: "#1a1a1a",
-  meta: "#444444",
+  meta: "#1a1a1a", // 全文黑色：元信息与正文同色，仅靠字重区分
   border: "#d4d4d4",
 };
 
@@ -29,7 +29,7 @@ export default function ResumePrintView({ content }: { content: string }) {
   const sections = parseResume(content);
   const header = sections[0];
   const name = header?.lines[0] || "";
-  const contactLine = header?.lines.slice(1).join("　|　") || "";
+  const contactLine = toContactLine(header?.lines.slice(1) || []);
   const bodySections = sections.slice(1);
 
   return (
@@ -74,12 +74,19 @@ function PrintSection({ section }: { section: ParsedSection }) {
       </h2>
       <div>
         {section.lines.map((line, idx) => {
-          const isTitleLine = /\|/.test(line) && line.split("|").length >= 2;
-          const isBullet = /^[•▸\-·]/.test(line.trim()) || line.trim().startsWith("- ");
+          // 「▍ 核心技术攻坚」这类小节子标题
+          const sub = parseSubHeader(line);
+          if (sub) {
+            return (
+              <p key={idx} style={{ fontSize: "10.5pt", fontWeight: 700, color: C.text, margin: "6pt 0 2pt", breakInside: "avoid" }}>
+                {sub}
+              </p>
+            );
+          }
 
-          // 条目标题行:"公司 | 职位 | 时间" → 左标题右时间(同行 flex,非表格,文本流顺序不变)
-          if (isTitleLine) {
-            const parts = line.split("|").map((p) => p.trim());
+          // 条目标题行 → 左标题右时间(同行 flex,非表格,文本流顺序不变)
+          const entry = parseEntryLine(line);
+          if (entry) {
             return (
               <div
                 key={idx}
@@ -92,16 +99,17 @@ function PrintSection({ section }: { section: ParsedSection }) {
                 }}
               >
                 <span style={{ fontSize: "10.5pt", fontWeight: 700, color: C.text }}>
-                  {parts[0]}
-                  {parts[1] && <span style={{ fontWeight: 400, color: C.meta, marginLeft: "6pt" }}>{parts[1]}</span>}
+                  {entry.main}
+                  {entry.role && <span style={{ fontWeight: 400, color: C.meta, marginLeft: "6pt" }}>{entry.role}</span>}
                 </span>
-                {parts[2] && (
-                  <span style={{ fontSize: "10.5pt", color: C.meta }}>{parts.slice(2).join(" | ")}</span>
+                {entry.date && (
+                  <span style={{ fontSize: "10.5pt", color: C.meta }}>{entry.date}</span>
                 )}
               </div>
             );
           }
 
+          const isBullet = /^[•▸\-·]/.test(line.trim()) || line.trim().startsWith("- ");
           if (isBullet) {
             const text = line.replace(/^[•▸\-·]\s*/, "").replace(/^-\s*/, "");
             return (

@@ -65,7 +65,6 @@ export interface DraftData {
   jd: string;
   templateId: string;
   formatId: string;
-  themeId: string;
   savedAt: number;
 }
 

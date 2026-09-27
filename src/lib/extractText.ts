@@ -40,6 +40,8 @@ export function fixRadicals(t: string): string {
 export function tidyExtractedText(raw: string): string {
   let t = fixRadicals(raw.normalize("NFKC"));
   t = t.replace(/\r\n?/g, "\n");
+  // 去掉 pdf-parse 的页码残留（"-- 1 of 2 --"）
+  t = t.replace(/^--\s*\d+\s*of\s*\d+\s*--$/gm, "");
   t = t.replace(/[ \t]{2,}/g, " ");
   t = t.replace(
     /(?<=[\u3400-\u9FFF\uF900-\uFAFF\u3000-\u303F\uFF00-\uFFEF])[ ]+(?=[\u3400-\u9FFF\uF900-\uFAFF\u3000-\u303F\uFF00-\uFFEF])/g,

@@ -14,7 +14,6 @@ import ResumePrintView from "@/components/ResumePrintView";
 import AtsScreenView, { type AtsScreenResult } from "@/components/AtsScreenView";
 import { TEMPLATES, type TemplateId } from "@/lib/templates";
 import { FORMATS, type FormatId } from "@/lib/resumeFormats";
-import { THEME_LIST, type ThemeId } from "@/lib/resumeThemes";
 import { estimatePages } from "@/lib/agent/checks";
 import { EXAMPLE_RESUME, EXAMPLE_JD } from "@/lib/exampleResume";
 import { getHistory, addHistory, deleteHistory, clearHistory, formatTime, saveDraft, loadDraft, type HistoryItem } from "@/lib/storage";
@@ -56,7 +55,6 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateId>("professional");
   const [selectedFormat, setSelectedFormat] = useState<FormatId>("classic");
-  const [selectedTheme, setSelectedTheme] = useState<ThemeId>("modern-blue");
   const [importedInfo, setImportedInfo] = useState<{ jobTitle: string; company: string; jobUrl: string } | null>(null);
   const [keywordBank, setKeywordBank] = useState<KeywordEntry[]>([]);
   const [keywordBankTotal, setKeywordBankTotal] = useState(0);
@@ -111,7 +109,6 @@ export default function Home() {
       // 旧版本存下的 id 可能在新版本里已不存在（如 formatId="expert_dossier"）→ 校验后再用，否则保持默认
       if (draft.templateId && TEMPLATES[draft.templateId as TemplateId]) setSelectedTemplate(draft.templateId as TemplateId);
       if (draft.formatId && FORMATS[draft.formatId as FormatId]) setSelectedFormat(draft.formatId as FormatId);
-      if (draft.themeId && THEME_LIST.some((t) => t.id === draft.themeId)) setSelectedTheme(draft.themeId as ThemeId);
     }
     try {
       if (new URLSearchParams(window.location.search).get("autostart") === "1") autoStartRef.current = true;
@@ -442,11 +439,11 @@ export default function Home() {
   useEffect(() => {
     const timer = setTimeout(() => {
       if (resume || jd) {
-        saveDraft({ resume, jd, templateId: selectedTemplate, formatId: selectedFormat, themeId: selectedTheme });
+        saveDraft({ resume, jd, templateId: selectedTemplate, formatId: selectedFormat });
       }
     }, 2000);
     return () => clearTimeout(timer);
-  }, [resume, jd, selectedTemplate, selectedFormat, selectedTheme]);
+  }, [resume, jd, selectedTemplate, selectedFormat]);
 
   useEffect(() => { if (activeTab === "keywordbank") loadKeywordBank(kwSort); }, [activeTab, kwSort]);
   useEffect(() => { if (activeTab === "history") setHistory(getHistory()); }, [activeTab]);
@@ -500,7 +497,7 @@ export default function Home() {
               <ResumeTemplateForm onFillResume={(text) => setResume(text)} />
             </div>
 
-            {/* 风格/格式/主题 */}
+            {/* 风格/格式 */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-4">
               <div>
                 <div className="flex items-center gap-2 mb-3"><span className="w-2 h-2 rounded-full bg-brand-500"></span><h2 className="text-sm font-semibold text-slate-700">润色风格</h2></div>
@@ -518,16 +515,6 @@ export default function Home() {
                   {Object.values(FORMATS).map((fmt) => (
                     <button key={fmt.id} onClick={() => setSelectedFormat(fmt.id)} className={`text-left p-2.5 rounded-lg border-2 transition ${selectedFormat === fmt.id ? "border-emerald-500 bg-emerald-50" : "border-slate-200 hover:border-slate-300"}`}>
                       <div className="flex items-center gap-1"><span className="text-base">{fmt.icon}</span><span className={`text-xs font-semibold ${selectedFormat === fmt.id ? "text-emerald-700" : "text-slate-700"}`}>{fmt.name}</span></div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="pt-2 border-t border-slate-100">
-                <div className="flex items-center gap-2 mb-3"><span className="w-2 h-2 rounded-full bg-purple-500"></span><h2 className="text-sm font-semibold text-slate-700">视觉主题</h2></div>
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                  {THEME_LIST.map((th) => (
-                    <button key={th.id} onClick={() => setSelectedTheme(th.id)} className={`p-2 rounded-lg border-2 transition text-center ${selectedTheme === th.id ? "border-purple-500 bg-purple-50" : "border-slate-200 hover:border-slate-300"}`}>
-                      <div className="text-lg mb-0.5">{th.icon}</div><div className={`text-[10px] font-medium ${selectedTheme === th.id ? "text-purple-700" : "text-slate-600"}`}>{th.name}</div>
                     </button>
                   ))}
                 </div>
@@ -661,7 +648,7 @@ export default function Home() {
                   </div>
 
                   <div className="p-4 max-h-[600px] overflow-y-auto print:max-h-none print:overflow-visible print:p-0">
-                    {activeTab === "preview" && <div className="print:hidden"><ResumePreview content={result.polishedResume} themeId={selectedTheme} /></div>}
+                    {activeTab === "preview" && <div className="print:hidden"><ResumePreview content={result.polishedResume} /></div>}
                     {activeTab === "polished" && <pre className="whitespace-pre-wrap text-sm text-slate-800 leading-relaxed font-sans">{result.polishedResume}</pre>}
                     {activeTab === "diff" && (<div><div className="flex items-center gap-4 mb-3 text-xs text-slate-500"><span className="flex items-center gap-1"><span className="w-3 h-3 inline-block bg-green-200 rounded"></span> 新增</span><span className="flex items-center gap-1"><span className="w-3 h-3 inline-block bg-red-200 rounded"></span> 删除</span></div><DiffView original={resume} modified={result.polishedResume} /></div>)}
                     {activeTab === "changes" && (<div className="space-y-3">{result.changes.map((change, idx) => (<div key={idx} className="border border-slate-200 rounded-lg p-3"><div className="flex items-start gap-2"><span className="flex-shrink-0 w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center mt-0.5">{idx + 1}</span><div className="flex-1 space-y-2"><div><span className="text-xs text-red-500 font-medium">原文：</span><span className="text-sm text-slate-600 line-through">{change.original}</span></div><div><span className="text-xs text-green-600 font-medium">修改：</span><span className="text-sm text-slate-800 font-medium">{change.modified}</span></div><div className="flex items-start gap-1.5"><span className="text-xs text-brand-600 font-medium mt-0.5">💡</span><span className="text-xs text-slate-500">{change.reason}</span></div></div></div></div>))}</div>)}
