@@ -11,7 +11,6 @@ export interface HistoryItem {
   id: string;
   timestamp: number;
   templateName: string;
-  formatName: string;
   jobTitle: string;
   company: string;
   originalResume: string;
@@ -64,7 +63,6 @@ export interface DraftData {
   resume: string;
   jd: string;
   templateId: string;
-  formatId: string;
   savedAt: number;
 }
 
