@@ -13,7 +13,6 @@ import AgentProgress from "@/components/AgentProgress";
 import ResumePrintView from "@/components/ResumePrintView";
 import AtsScreenView, { type AtsScreenResult } from "@/components/AtsScreenView";
 import { TEMPLATES, type TemplateId } from "@/lib/templates";
-import { FORMATS, type FormatId } from "@/lib/resumeFormats";
 import { estimatePages } from "@/lib/agent/checks";
 import { EXAMPLE_RESUME, EXAMPLE_JD } from "@/lib/exampleResume";
 import { getHistory, addHistory, deleteHistory, clearHistory, formatTime, saveDraft, loadDraft, type HistoryItem } from "@/lib/storage";
@@ -54,7 +53,6 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("preview");
   const [copied, setCopied] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateId>("professional");
-  const [selectedFormat, setSelectedFormat] = useState<FormatId>("classic");
   const [importedInfo, setImportedInfo] = useState<{ jobTitle: string; company: string; jobUrl: string } | null>(null);
   const [keywordBank, setKeywordBank] = useState<KeywordEntry[]>([]);
   const [keywordBankTotal, setKeywordBankTotal] = useState(0);
@@ -106,9 +104,7 @@ export default function Home() {
     if (draft) {
       if (draft.resume) setResume(draft.resume);
       if (draft.jd) setJd(draft.jd);
-      // 旧版本存下的 id 可能在新版本里已不存在（如 formatId="expert_dossier"）→ 校验后再用，否则保持默认
       if (draft.templateId && TEMPLATES[draft.templateId as TemplateId]) setSelectedTemplate(draft.templateId as TemplateId);
-      if (draft.formatId && FORMATS[draft.formatId as FormatId]) setSelectedFormat(draft.formatId as FormatId);
     }
     try {
       if (new URLSearchParams(window.location.search).get("autostart") === "1") autoStartRef.current = true;
@@ -220,7 +216,6 @@ export default function Home() {
     // 保存到历史记录
     addHistory({
       templateName: TEMPLATES[selectedTemplate]?.name || String(selectedTemplate),
-      formatName: FORMATS[selectedFormat]?.name || String(selectedFormat),
       jobTitle: importedInfo?.jobTitle || "",
       company: importedInfo?.company || "",
       originalResume: resume,
@@ -249,7 +244,7 @@ export default function Home() {
     try {
       const res = await fetch("/api/polish", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resume, jd, templateId: selectedTemplate, formatId: selectedFormat }),
+        body: JSON.stringify({ resume, jd, templateId: selectedTemplate }),
       });
       const data = await res.json() as PolishResult & { error?: string };
       if (!res.ok) { setError(data.error || "请求失败"); }
@@ -267,7 +262,7 @@ export default function Home() {
     try {
       const res = await fetch("/api/polish/agent", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resume, jd, templateId: selectedTemplate, formatId: selectedFormat, companyContext: research?.context }),
+        body: JSON.stringify({ resume, jd, templateId: selectedTemplate, companyContext: research?.context }),
       });
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => null) as { error?: string } | null;
@@ -439,11 +434,11 @@ export default function Home() {
   useEffect(() => {
     const timer = setTimeout(() => {
       if (resume || jd) {
-        saveDraft({ resume, jd, templateId: selectedTemplate, formatId: selectedFormat });
+        saveDraft({ resume, jd, templateId: selectedTemplate });
       }
     }, 2000);
     return () => clearTimeout(timer);
-  }, [resume, jd, selectedTemplate, selectedFormat]);
+  }, [resume, jd, selectedTemplate]);
 
   useEffect(() => { if (activeTab === "keywordbank") loadKeywordBank(kwSort); }, [activeTab, kwSort]);
   useEffect(() => { if (activeTab === "history") setHistory(getHistory()); }, [activeTab]);
@@ -497,27 +492,15 @@ export default function Home() {
               <ResumeTemplateForm onFillResume={(text) => setResume(text)} />
             </div>
 
-            {/* 风格/格式 */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-4">
-              <div>
-                <div className="flex items-center gap-2 mb-3"><span className="w-2 h-2 rounded-full bg-brand-500"></span><h2 className="text-sm font-semibold text-slate-700">润色风格</h2></div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {Object.values(TEMPLATES).map((tpl) => (
-                    <button key={tpl.id} onClick={() => setSelectedTemplate(tpl.id)} className={`text-left p-2.5 rounded-lg border-2 transition ${selectedTemplate === tpl.id ? "border-brand-500 bg-brand-50" : "border-slate-200 hover:border-slate-300"}`}>
-                      <div className="flex items-center gap-1.5"><span className="text-base">{tpl.icon}</span><span className={`text-xs font-semibold ${selectedTemplate === tpl.id ? "text-brand-700" : "text-slate-700"}`}>{tpl.name}</span></div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="pt-2 border-t border-slate-100">
-                <div className="flex items-center gap-2 mb-3"><span className="w-2 h-2 rounded-full bg-emerald-500"></span><h2 className="text-sm font-semibold text-slate-700">输出格式</h2></div>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                  {Object.values(FORMATS).map((fmt) => (
-                    <button key={fmt.id} onClick={() => setSelectedFormat(fmt.id)} className={`text-left p-2.5 rounded-lg border-2 transition ${selectedFormat === fmt.id ? "border-emerald-500 bg-emerald-50" : "border-slate-200 hover:border-slate-300"}`}>
-                      <div className="flex items-center gap-1"><span className="text-base">{fmt.icon}</span><span className={`text-xs font-semibold ${selectedFormat === fmt.id ? "text-emerald-700" : "text-slate-700"}`}>{fmt.name}</span></div>
-                    </button>
-                  ))}
-                </div>
+            {/* 润色风格 */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+              <div className="flex items-center gap-2 mb-3"><span className="w-2 h-2 rounded-full bg-brand-500"></span><h2 className="text-sm font-semibold text-slate-700">润色风格</h2></div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {Object.values(TEMPLATES).map((tpl) => (
+                  <button key={tpl.id} onClick={() => setSelectedTemplate(tpl.id)} className={`text-left p-2.5 rounded-lg border-2 transition ${selectedTemplate === tpl.id ? "border-brand-500 bg-brand-50" : "border-slate-200 hover:border-slate-300"}`}>
+                    <div className="flex items-center gap-1.5"><span className="text-base">{tpl.icon}</span><span className={`text-xs font-semibold ${selectedTemplate === tpl.id ? "text-brand-700" : "text-slate-700"}`}>{tpl.name}</span></div>
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -733,7 +716,7 @@ export default function Home() {
                                       {item.score !== undefined && <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${scoreColor(item.score)}`}>{item.score}分</span>}
                                     </div>
                                     <div className="flex items-center gap-2 mt-1 text-xs text-slate-400">
-                                      <span>{item.templateName}</span><span>·</span><span>{item.formatName}</span><span>·</span><span>{formatTime(item.timestamp)}</span>
+                                      <span>{item.templateName}</span><span>·</span><span>{formatTime(item.timestamp)}</span>
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-1 flex-shrink-0">
