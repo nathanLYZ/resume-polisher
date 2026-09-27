@@ -1,155 +1,74 @@
 "use client";
 
 import { useMemo } from "react";
-import { getTheme, type ThemeId } from "@/lib/resumeThemes";
 
 interface ResumePreviewProps {
   content: string;
-  themeId: ThemeId;
 }
 
 /**
- * 简历视觉预览组件
- * 将纯文本简历解析为结构化分区，渲染为美观的简历卡片
+ * 简历视觉预览组件 —— 极简黑白单栏版式，与打印版(ResumePrintView)同构
+ * 参考：姓名 + 联系方式一行、分区细线、条目标题左标题右时间、全文黑色
+ * 不做彩色高亮/技能胶囊/侧边栏，保证屏幕预览与导出 PDF 所见即所得
  */
-export default function ResumePreview({ content, themeId }: ResumePreviewProps) {
-  const theme = getTheme(themeId);
-
+export default function ResumePreview({ content }: ResumePreviewProps) {
   // 解析简历文本为结构化数据
   const sections = useMemo(() => parseResume(content), [content]);
 
-  // 提取姓名和联系方式（通常在开头）
+  // 提取姓名和联系方式（通常在开头），分隔符统一为「·」
   const header = sections[0];
   const name = header?.lines[0] || "";
-  const contactLine = header?.lines.slice(1).join(" | ") || "";
+  const contactLine = toContactLine(header?.lines.slice(1) || []);
 
-  // 剩余分区
+  // 正文分区
   const bodySections = sections.slice(1);
-
-  // 分离侧边栏内容（技能/教育/证书）和主区域内容（经历/项目）
-  const sidebarSections = bodySections.filter((s) =>
-    /技能|教育|证书|语言|skill|education|cert/i.test(s.title)
-  );
-  const mainSections = bodySections.filter((s) =>
-    !/技能|教育|证书|语言|skill|education|cert/i.test(s.title)
-  );
-
-  const hasSidebar = sidebarSections.length > 0;
-
-  const cssVars = theme.vars as Record<string, string>;
 
   return (
     <div
       className="rv-root"
       style={{
-        background: cssVars["--rv-bg"],
-        borderRadius: cssVars["--rv-radius"],
+        background: "#ffffff",
+        border: "1px solid #e5e5e5",
         fontFamily: "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Noto Sans SC', sans-serif",
-        overflow: "hidden",
-        boxShadow: "0 4px 24px rgba(0,0,0,0.1)",
-        ...cssVarsToStyle(cssVars),
-      } as React.CSSProperties}
+        color: "#1a1a1a",
+        padding: "44px 48px",
+      }}
     >
       {/* 头部：姓名 + 联系方式 */}
-      <div
-        className="rv-header"
-        style={{
-          background: cssVars["--rv-sidebar-bg"],
-          color: cssVars["--rv-sidebar-text"],
-          padding: "32px 40px 24px",
-        }}
-      >
-        <h1
-          style={{
-            fontSize: "28px",
-            fontWeight: 700,
-            margin: 0,
-            color: cssVars["--rv-sidebar-accent"],
-            letterSpacing: "2px",
-          }}
-        >
+      <header style={{ marginBottom: "18px" }}>
+        <h1 style={{ fontSize: "26px", fontWeight: 700, color: "#000000", margin: 0, letterSpacing: "1px", lineHeight: 1.3 }}>
           {name}
         </h1>
         {contactLine && (
-          <p
-            style={{
-              fontSize: "13px",
-              marginTop: "8px",
-              opacity: 0.85,
-              lineHeight: 1.6,
-            }}
-          >
+          <p style={{ fontSize: "13px", color: "#1a1a1a", margin: "8px 0 14px", lineHeight: 1.6 }}>
             {contactLine}
           </p>
         )}
-      </div>
+        <div style={{ borderBottom: "1px solid #d9d9d9" }} />
+      </header>
 
-      {/* 主体：双栏 or 单栏 */}
-      <div
-        className="rv-body"
-        style={{
-          display: hasSidebar ? "flex" : "block",
-          minHeight: "400px",
-        }}
-      >
-        {/* 侧边栏 */}
-        {hasSidebar && (
-          <aside
-            className="rv-sidebar"
-            style={{
-              width: "32%",
-              background: cssVars["--rv-sidebar-bg"],
-              color: cssVars["--rv-sidebar-text"],
-              padding: "24px 28px",
-              flexShrink: 0,
-            }}
-          >
-            {sidebarSections.map((section, idx) => (
-              <SidebarSection key={idx} section={section} theme={cssVars} />
-            ))}
-          </aside>
-        )}
-
-        {/* 主区域 */}
-        <main
-          className="rv-main"
-          style={{
-            flex: 1,
-            background: cssVars["--rv-main-bg"],
-            color: cssVars["--rv-main-text"],
-            padding: "24px 32px",
-          }}
-        >
-          {/* 如果没有侧边栏，所有分区都在主区域 */}
-          {(hasSidebar ? mainSections : bodySections).map((section, idx) => (
-            <MainSection key={idx} section={section} theme={cssVars} />
-          ))}
-        </main>
-      </div>
+      {/* 正文：单栏，按分区顺序渲染 */}
+      {bodySections.map((section, idx) => (
+        <Section key={idx} section={section} />
+      ))}
     </div>
   );
 }
 
 /**
- * 主区域分区
+ * 分区：小标题 + 细线，条目按行渲染
  */
-function MainSection({
-  section,
-  theme,
-}: {
-  section: ParsedSection;
-  theme: Record<string, string>;
-}) {
+function Section({ section }: { section: ParsedSection }) {
   return (
-    <div className="rv-section" style={{ marginBottom: "24px" }}>
+    <section style={{ marginBottom: "20px" }}>
       <h2
         style={{
-          fontSize: "15px",
+          fontSize: "14px",
           fontWeight: 700,
-          color: theme["--rv-heading"],
-          borderBottom: `2px solid ${theme["--rv-border"]}`,
-          paddingBottom: "6px",
-          marginBottom: "12px",
+          color: "#000000",
+          borderBottom: "1px solid #d9d9d9",
+          paddingBottom: "5px",
+          margin: "0 0 10px",
           letterSpacing: "1px",
         }}
       >
@@ -157,13 +76,19 @@ function MainSection({
       </h2>
       <div>
         {section.lines.map((line, idx) => {
-          // 检测是否是"公司 | 职位 | 时间"格式的标题行
-          const isTitleLine = /\|/.test(line) && line.split("|").length >= 2;
-          // 检测是否是 bullet point
-          const isBullet = /^[•▸\-·]/.test(line.trim()) || line.trim().startsWith("- ");
+          // 「▍ 核心技术攻坚」这类小节子标题
+          const sub = parseSubHeader(line);
+          if (sub) {
+            return (
+              <p key={idx} style={{ fontSize: "13px", fontWeight: 700, color: "#1a1a1a", margin: "10px 0 4px" }}>
+                {sub}
+              </p>
+            );
+          }
 
-          if (isTitleLine) {
-            const parts = line.split("|").map((p) => p.trim());
+          // 条目标题行（公司/职位 + 时间）
+          const entry = parseEntryLine(line);
+          if (entry) {
             return (
               <div
                 key={idx}
@@ -171,23 +96,22 @@ function MainSection({
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "baseline",
-                  marginBottom: "4px",
-                  marginTop: idx > 0 ? "12px" : "0",
+                  margin: idx > 0 ? "10px 0 4px" : "0 0 4px",
                 }}
               >
-                <span style={{ fontSize: "14px", fontWeight: 600, color: theme["--rv-main-text"] }}>
-                  {parts[0]}
-                  {parts[1] && <span style={{ color: theme["--rv-accent"], marginLeft: "8px" }}>{parts[1]}</span>}
+                <span style={{ fontSize: "13px", fontWeight: 600, color: "#1a1a1a" }}>
+                  {entry.main}
+                  {entry.role && <span style={{ fontWeight: 400, marginLeft: "8px" }}>{entry.role}</span>}
                 </span>
-                {parts[2] && (
-                  <span style={{ fontSize: "12px", color: theme["--rv-accent"], opacity: 0.8 }}>
-                    {parts.slice(2).join(" | ")}
-                  </span>
+                {entry.date && (
+                  <span style={{ fontSize: "12px", color: "#1a1a1a", whiteSpace: "nowrap" }}>{entry.date}</span>
                 )}
               </div>
             );
           }
 
+          // bullet point
+          const isBullet = /^[•▸\-·]/.test(line.trim()) || line.trim().startsWith("- ");
           if (isBullet) {
             const text = line.replace(/^[•▸\-·]\s*/, "").replace(/^-\s*/, "");
             return (
@@ -196,165 +120,47 @@ function MainSection({
                 style={{
                   fontSize: "13px",
                   lineHeight: 1.7,
-                  color: theme["--rv-main-text"],
-                  paddingLeft: "16px",
+                  color: "#1a1a1a",
+                  paddingLeft: "14px",
                   position: "relative",
-                  marginBottom: "4px",
+                  marginBottom: "3px",
                 }}
               >
-                <span
-                  style={{
-                    position: "absolute",
-                    left: 0,
-                    top: 0,
-                    color: theme["--rv-accent"],
-                    fontWeight: 700,
-                  }}
-                >
-                  ▸
-                </span>
-                {renderTextWithKeywords(line, theme)}
+                <span style={{ position: "absolute", left: 0, top: 0, color: "#1a1a1a" }}>·</span>
+                {text}
               </div>
             );
           }
 
           // 普通文本行
           return (
-            <p
-              key={idx}
-              style={{
-                fontSize: "13px",
-                lineHeight: 1.7,
-                color: theme["--rv-main-text"],
-                margin: "0 0 6px",
-              }}
-            >
-              {renderTextWithKeywords(line, theme)}
-            </p>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-/**
- * 侧边栏分区
- */
-function SidebarSection({
-  section,
-  theme,
-}: {
-  section: ParsedSection;
-  theme: Record<string, string>;
-}) {
-  return (
-    <div className="rv-sidebar-section" style={{ marginBottom: "20px" }}>
-      <h3
-        style={{
-          fontSize: "13px",
-          fontWeight: 700,
-          color: theme["--rv-sidebar-accent"],
-          textTransform: "uppercase",
-          letterSpacing: "1.5px",
-          marginBottom: "10px",
-          paddingBottom: "6px",
-          borderBottom: `1px solid ${theme["--rv-sidebar-accent"]}33`,
-        }}
-      >
-        {section.title}
-      </h3>
-      <div>
-        {section.lines.map((line, idx) => {
-          // 检测 "分类：技能1、技能2" 格式
-          if (/[:：]/.test(line)) {
-            const [category, items] = line.split(/[:：]/).map((s) => s.trim());
-            const skills = items.split(/[、,，]/).map((s) => s.trim()).filter(Boolean);
-            return (
-              <div key={idx} style={{ marginBottom: "8px" }}>
-                <span style={{ fontSize: "12px", fontWeight: 600, color: theme["--rv-sidebar-accent"], display: "block", marginBottom: "4px" }}>
-                  {category}
-                </span>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
-                  {skills.map((skill, si) => (
-                    <span
-                      key={si}
-                      style={{
-                        fontSize: "11px",
-                        padding: "2px 8px",
-                        background: `${theme["--rv-sidebar-accent"]}22`,
-                        color: theme["--rv-sidebar-accent"],
-                        borderRadius: "4px",
-                      }}
-                    >
-                      {skill}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            );
-          }
-
-          // 检测 "学校 | 专业 | 时间" 格式
-          if (/\|/.test(line)) {
-            const parts = line.split("|").map((p) => p.trim());
-            return (
-              <div key={idx} style={{ marginBottom: "8px" }}>
-                <div style={{ fontSize: "13px", fontWeight: 600, color: theme["--rv-sidebar-text"] }}>{parts[0]}</div>
-                {parts.slice(1).map((p, pi) => (
-                  <div key={pi} style={{ fontSize: "12px", color: theme["--rv-sidebar-text"], opacity: 0.8 }}>{p}</div>
-                ))}
-              </div>
-            );
-          }
-
-          // 普通行
-          return (
-            <p key={idx} style={{ fontSize: "12px", lineHeight: 1.6, color: theme["--rv-sidebar-text"], margin: "0 0 4px", opacity: 0.9 }}>
+            <p key={idx} style={{ fontSize: "13px", lineHeight: 1.7, color: "#1a1a1a", margin: "0 0 5px" }}>
               {line}
             </p>
           );
         })}
       </div>
-    </div>
+    </section>
   );
 }
 
-/**
- * 在文本中高亮关键词（数字、百分比等）
- */
-function renderTextWithKeywords(text: string, theme: Record<string, string>): React.ReactNode {
-  // 高亮数字和百分比
-  const parts = text.split(/(\d+[%％]|\d+\/\d+|\d+个|\d+人|\d+次|\d+万|\d+亿)/g);
-  return parts.map((part, idx) => {
-    if (/^\d+[%％]$/.test(part) || /^\d+\/\d+$/.test(part) || /^\d+[个人次万亿]/.test(part)) {
-      return (
-        <span key={idx} style={{ color: theme["--rv-accent"], fontWeight: 600 }}>
-          {part}
-        </span>
-      );
-    }
-    return <span key={idx}>{part}</span>;
-  });
-}
-
-/**
- * 将 CSS 变量对象转为 style 属性
- */
-function cssVarsToStyle(vars: Record<string, string>): React.CSSProperties {
-  const style: Record<string, string> = {};
-  for (const [key, value] of Object.entries(vars)) {
-    style[key] = value;
-  }
-  return style as React.CSSProperties;
-}
-
-// ============ 简历文本解析 ============
+// ============ 简历文本解析（预览与打印共用） ============
 
 export interface ParsedSection {
   title: string;
   lines: string[];
 }
+
+/** pdf-parse 的页码残留（"-- 1 of 2 --"） */
+const PAGE_MARKER = /^--\s*\d+\s*of\s*\d+\s*--$/;
+
+/**
+ * 已知中文标题 + 可选英文大写尾缀（如「个人简介 SUMMARY」「AI 项目亮点 AI PROJECTS」）。
+ * 整行必须恰好匹配，避免「项目角色独立架构师…」「其他语言 Java | Node.js」等内容行被误判为标题。
+ * 注意 PDF 提取可能把 AI 拆成「A I」，前缀做了容错。
+ */
+const SECTION_TITLE_RE =
+  /^(?:(?:A\s?I)\s*)?(个人简介|专业摘要|专业技能|核心技能|自我评价|工作经历|实习经历|项目经历|项目经验|项目亮点|教育经历|教育背景|教育与证书|荣誉奖项|获奖经历|证书|语言能力|技能|经历|项目|教育|其他)(?:\s*[A-Z][A-Z\s/&]{0,24})?$/;
 
 /**
  * 将纯文本简历解析为分区结构
@@ -370,21 +176,23 @@ export function parseResume(text: string): ParsedSection[] {
     const line = lines[i].trim();
     if (!line) continue;
 
-    // 检测装饰线
-    if (/^[═━─\-=]{3,}/.test(line)) continue;
+    // 跳过装饰线与页码残留
+    if (/^[═━─\-=]{3,}/.test(line) || PAGE_MARKER.test(line)) continue;
 
     // 检测分区标题
     const titleMatch = line.match(/^[【\[](.+?)[】\]]$/);
     const isDecoratedTitle = titleMatch;
     const isAllCapsTitle = /^[A-Z\s]{3,}$/.test(line) && line.length < 30;
-    const isChineseTitle = /^(专业摘要|核心技能|工作经历|项目经验|教育背景|证书|语言能力|技能|经历|项目|教育|其他|EXPERIENCE|PROJECTS|EDUCATION|SKILLS|SUMMARY|CERT)/i.test(line);
+    const isChineseTitle = SECTION_TITLE_RE.test(line) ||
+      /^(EXPERIENCE|PROJECTS|EDUCATION|SKILLS|SUMMARY|CERT|PROFILE|AWARDS)$/i.test(line);
 
     if (isDecoratedTitle || isAllCapsTitle || isChineseTitle) {
       // 保存之前的分区
       if (currentSection) {
         sections.push(currentSection);
       }
-      const title = titleMatch ? titleMatch[1] : line;
+      // PDF 提取可能把 AI 拆成「A I」，标题展示时归一
+      const title = (titleMatch ? titleMatch[1] : line).replace(/^A\s?I\s/, "AI ");
       currentSection = { title, lines: [] };
       continue;
     }
@@ -408,4 +216,52 @@ export function parseResume(text: string): ParsedSection[] {
   }
 
   return sections;
+}
+
+export interface EntryLine {
+  /** 主体：公司/项目名/职位 */
+  main: string;
+  /** 次要信息：职位/角色 */
+  role?: string;
+  /** 右侧时间：2022.08 – 至今 */
+  date?: string;
+}
+
+/** 行尾的日期区间（「2020.06 – 2022.08」「2013.03 – 至今」） */
+const DATE_TAIL_RE = /\s(\d{4}(?:\.\d{1,2})?(?:\s*[–—~-]\s*(?:至今|\d{4}(?:\.\d{1,2})?))?)$/;
+
+/**
+ * 识别条目标题行：
+ * - 管道符风格「公司 | 职位 | 时间」
+ * - 行尾日期风格「射频软件技术负责人(Technical Leader) 2022.08 – 至今」
+ * 都不是则返回 null（按普通内容行渲染）
+ */
+export function parseEntryLine(line: string): EntryLine | null {
+  const trimmed = line.trim();
+  if (!trimmed || /[:：]/.test(trimmed)) return null; // 「技术架构 xxx」冒号行不当条目
+  if (/^[•▸\-·]/.test(trimmed) || /^\d+[.、]/.test(trimmed)) return null; // bullet / 编号列表
+
+  if (trimmed.includes("|")) {
+    const parts = trimmed.split("|").map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      return { main: parts[0], role: parts[1] || undefined, date: parts.slice(2).join(" · ") || undefined };
+    }
+  }
+
+  const m = trimmed.match(DATE_TAIL_RE);
+  if (m && m.index !== undefined && m.index > 2) {
+    return { main: trimmed.slice(0, m.index).trim(), date: m[1] };
+  }
+  return null;
+}
+
+/** 识别「▍ 核心技术攻坚」这类小节子标题，返回去掉标记的文本 */
+export function parseSubHeader(line: string): string | null {
+  const m = line.trim().match(/^[▍▎◆■★]\s*(.+)$/);
+  return m ? m[1] : null;
+}
+
+/** 头部联系方式行：多行合并、「|」统一为「·」 */
+export function toContactLine(lines: string[]): string {
+  return lines.join(" · ").replace(/\s*\|\s*/g, " · ").trim();
 }
